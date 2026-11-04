@@ -1,0 +1,5 @@
+{
+  "name": "pathloom",
+  "private": true,
+  "workspaces": ["packages/*", "apps/desktop"]
+}

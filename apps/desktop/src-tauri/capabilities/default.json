@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Main window: core APIs and folder picker only. File access goes through pathloom-core commands.",
+  "windows": ["main"],
+  "permissions": ["core:default", "dialog:default"]
+}

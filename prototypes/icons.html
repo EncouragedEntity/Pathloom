@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pathloom icons</title>
+<style>
+:root{--bg:#1c1e22;--panel:#23262b;--card:#272a30;--bd:#343840;--tx:#e7e9ec;--mu:#868c96;--ac:#e8a33d}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--tx);font:14px/1.5 Inter,system-ui,sans-serif;padding:28px}
+h1{font-size:20px;font-weight:600;margin-bottom:4px}
+p.sub{color:var(--mu);margin-bottom:22px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:16px}
+.opt{background:var(--panel);border:1px solid var(--bd);border-radius:14px;padding:16px}
+.opt h2{font-size:15px;font-weight:600;display:flex;gap:8px;align-items:center}
+.opt h2 b{font-family:ui-monospace,monospace;color:var(--ac);font-weight:500}
+.opt p{color:var(--mu);font-size:12.5px;margin:2px 0 12px}
+.row{display:flex;align-items:flex-end;gap:14px}
+.row svg{display:block}
+.light{background:#f3f3f4;border-radius:10px;padding:8px;display:flex;gap:10px;align-items:flex-end}
+.task{display:flex;gap:6px;align-items:center;margin-top:12px;padding:6px 8px;background:#101113;border-radius:8px;width:max-content;font-size:12px;color:var(--mu)}
+</style>
+</head>
+<body>
+<h1>Варіанти іконки Pathloom</h1>
+<p class="sub">Кожен варіант показано в розмірах 128, 64, 32 і 16 px, на темному й світлому тлі, а також у «панелі задач». Назви мені номер, який подобається, або що змішати.</p>
+<div class="grid" id="grid"></div>
+<script>
+const A='#e8a33d', D='#23262b', C='#2e3138', W='#e7e9ec';
+const icons = [
+ ['1','Дві картки й зв\'язок','Картки етапів, з\'єднані залежністю. Головна ідея продукту.',
+  `<rect width="1024" height="1024" rx="224" fill="${D}"/><rect x="176" y="268" width="272" height="196" rx="44" fill="${C}" stroke="${W}" stroke-width="40"/><rect x="576" y="560" width="272" height="196" rx="44" fill="${A}"/><path d="M448 366 C 560 366, 464 658, 576 658" fill="none" stroke="${A}" stroke-width="44" stroke-linecap="round"/><rect x="236" y="342" width="120" height="28" rx="14" fill="${W}"/><rect x="636" y="634" width="120" height="28" rx="14" fill="${D}"/>`],
+ ['2','Три вузли шляху','Три кружки-етапи на кривій: «шлях» від старту до мети.',
+  `<rect width="1024" height="1024" rx="224" fill="${D}"/><path d="M230 760 C 360 760, 360 512, 512 512 S 664 264, 794 264" fill="none" stroke="${W}" stroke-width="40" stroke-linecap="round" opacity=".55"/><circle cx="230" cy="760" r="78" fill="${W}"/><circle cx="512" cy="512" r="78" fill="${C}" stroke="${W}" stroke-width="36"/><circle cx="794" cy="264" r="96" fill="${A}"/>`],
+ ['3','Літера P з нитки','Буква P, намальована однією лінією, що закінчується вузлом (Path + loom).',
+  `<rect width="1024" height="1024" rx="224" fill="${D}"/><path d="M340 820 V 260 H 560 a 170 170 0 0 1 0 340 H 340" fill="none" stroke="${W}" stroke-width="72" stroke-linecap="round" stroke-linejoin="round"/><circle cx="560" cy="430" r="70" fill="${A}"/>`],
+ ['4','Ромб-milestone','Ромб контрольної точки з двома вхідними лініями.',
+  `<rect width="1024" height="1024" rx="224" fill="${D}"/><path d="M160 330 C 330 330, 330 512, 430 512 M160 694 C 330 694, 330 512, 430 512" fill="none" stroke="${W}" stroke-width="40" stroke-linecap="round" opacity=".6"/><rect x="452" y="372" width="280" height="280" rx="40" transform="rotate(45 592 512)" fill="${A}"/>`],
+ ['5','Ткацька сітка','Переплетені нитки утворюють сітку: «loom» — ткацький верстат.',
+  `<rect width="1024" height="1024" rx="224" fill="${D}"/><g fill="none" stroke-width="64" stroke-linecap="round"><path d="M300 220 V 804" stroke="${W}"/><path d="M512 220 V 804" stroke="${W}"/><path d="M724 220 V 804" stroke="${W}"/><path d="M220 400 C 300 340, 420 460, 512 400 S 724 340, 804 400" stroke="${A}"/><path d="M220 624 C 300 564, 420 684, 512 624 S 724 564, 804 624" stroke="${A}"/></g>`],
+ ['6','Картка з чеклістом','Одна картка етапу з галочками й акцентною смугою.',
+  `<rect width="1024" height="1024" rx="224" fill="${D}"/><rect x="232" y="200" width="560" height="624" rx="64" fill="${C}" stroke="${W}" stroke-width="32"/><rect x="232" y="200" width="560" height="96" rx="48" fill="${A}"/><g stroke-width="40" stroke-linecap="round" stroke-linejoin="round" fill="none"><path d="M320 430 l40 40 l80 -80" stroke="${A}"/><path d="M320 590 l40 40 l80 -80" stroke="${A}"/><path d="M500 430 H 700 M500 590 H 700 M500 730 H 640" stroke="${W}"/></g><circle cx="360" cy="730" r="34" fill="none" stroke="${W}" stroke-width="28"/>`],
+ ['7','Світлий варіант №1','Ті самі дві картки, але на бурштиновому тлі — помітніше в доку/панелі.',
+  `<rect width="1024" height="1024" rx="224" fill="${A}"/><rect x="176" y="268" width="272" height="196" rx="44" fill="${D}"/><rect x="576" y="560" width="272" height="196" rx="44" fill="#fff8ec" stroke="${D}" stroke-width="40"/><path d="M448 366 C 560 366, 464 658, 576 658" fill="none" stroke="${D}" stroke-width="44" stroke-linecap="round"/><rect x="236" y="342" width="120" height="28" rx="14" fill="${A}"/><rect x="636" y="634" width="120" height="28" rx="14" fill="${D}"/>`],
+ ['8','Sketch-стиль','Дві картки «від руки», як у стилі Sketch.',
+  `<rect width="1024" height="1024" rx="224" fill="#f3eee3"/><g fill="none" stroke="#2c2720" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"><path d="M182 274 C 300 262, 380 270, 446 280 C 452 340, 450 400, 444 462 C 340 470, 260 466, 184 458 C 176 400, 178 330, 182 274 Z"/><path d="M582 566 C 700 556, 780 562, 846 572 C 852 632, 850 690, 842 752 C 740 760, 660 756, 584 748 C 576 690, 578 620, 582 566 Z" fill="#b4552d" stroke="#b4552d"/><path d="M446 366 C 556 380, 470 650, 580 660" stroke="#b4552d" stroke-width="36"/></g>`],
+];
+const sizes=[128,64,32,16];
+const svg=(body,s)=>`<svg width="${s}" height="${s}" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">${body}</svg>`;
+document.getElementById('grid').innerHTML=icons.map(([n,t,d,b])=>`<div class="opt"><h2><b>${n}</b>${t}</h2><p>${d}</p><div class="row">${sizes.map(s=>svg(b,s)).join('')}</div><div class="light" style="margin-top:12px">${[64,32,16].map(s=>svg(b,s)).join('')}</div><div class="task">${svg(b,20)} Pathloom</div></div>`).join('');
+</script>
+</body>
+</html>

@@ -1,0 +1,70 @@
+{
+  "start": {
+    "tagline": "Whiteboard and roadmap for projects you build with AI",
+    "newProject": "New project",
+    "openFolder": "Open folder",
+    "recent": "Recent",
+    "noRecent": "No recent projects yet",
+    "pickFolderNew": "Choose a folder for the new project",
+    "pickFolderOpen": "Choose a project folder"
+  },
+  "sidebar": {
+    "search": "Search stages and tasks",
+    "boards": "Boards",
+    "newBoard": "New board",
+    "boardName": "Board name",
+    "stages": "Stages on this board",
+    "all": "All",
+    "active": "Active",
+    "done": "Done",
+    "noStages": "Press S and click the board to add a stage",
+    "language": "Language",
+    "theme": "Theme"
+  },
+  "tools": {
+    "select": "Select",
+    "hand": "Hand",
+    "rect": "Rectangle",
+    "diamond": "Diamond",
+    "ellipse": "Ellipse",
+    "arrow": "Arrow",
+    "line": "Line",
+    "pencil": "Pencil",
+    "text": "Text",
+    "stage": "Stage card"
+  },
+  "status": {
+    "done": "Done",
+    "active": "In progress",
+    "ready": "Ready to start",
+    "blocked": "Blocked"
+  },
+  "who": { "me": "Me", "ai": "AI", "both": "Me + AI" },
+  "inspector": {
+    "who": "Assignee",
+    "due": "Due",
+    "priority": "Priority",
+    "branch": "Branch",
+    "dependsOn": "Depends on",
+    "blocks": "Blocks",
+    "tasks": "Tasks",
+    "addTask": "Add task",
+    "close": "Close",
+    "toStage": "Convert to stage",
+    "priorities": { "low": "Low", "med": "Medium", "high": "High" }
+  },
+  "statusbar": {
+    "ready": "{{count}} tasks ready",
+    "blocked": "{{count}} stages blocked",
+    "saved": "Saved to files",
+    "saving": "Saving…",
+    "saveError": "Save failed: {{message}}"
+  },
+  "canvas": {
+    "newStage": "New stage",
+    "cycleError": "This link would create a cycle",
+    "missingStage": "Stage not found",
+    "moreTasks": "+{n} more"
+  },
+  "common": { "undo": "Undo", "redo": "Redo", "zoomIn": "Zoom in", "zoomOut": "Zoom out", "fit": "Fit to screen" }
+}

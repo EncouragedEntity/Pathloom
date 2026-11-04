@@ -1,0 +1,470 @@
+<!doctype html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pathloom concepts</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Caveat:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;font-family:Inter,system-ui,sans-serif;background:#0b0b0d;color:#ddd}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+kbd{font-family:'JetBrains Mono',monospace;font-size:10px;padding:1px 5px;border-radius:4px;border:1px solid var(--bd2);color:var(--mu)}
+#pbar{height:46px;display:flex;align-items:center;gap:14px;padding:0 14px;background:#111114;border-bottom:1px solid #222;font-size:12px;color:#aaa;white-space:nowrap;overflow-x:auto}
+#pbar b{color:#fff;font-weight:600}
+.seg{display:flex;border:1px solid #2a2a30;border-radius:8px;overflow:hidden}
+.seg button{padding:6px 10px;color:#aaa}
+.seg button.on{background:#2b2b35;color:#fff}
+#pbar select{background:#1a1a1f;color:#ddd;border:1px solid #2a2a30;border-radius:8px;padding:5px 8px;font:inherit}
+#pbar .hint{color:#777;margin-left:auto}
+
+/* themes */
+.t-midnight{--bg:#0f0d16;--bg2:#14111d;--panel:#181524;--card:#1b1827;--card2:#221e31;--bd:#2a2540;--bd2:#3a3358;--tx:#ece9f7;--tx2:#b8b2d1;--mu:#7d769a;--ac:#9b87f5;--actx:#0f0d16;--ok:#4cc38a;--warn:#e8b04a;--bad:#ef5b6a;--edge:#4a4370;--dot:#231f35;--sh:0 10px 30px rgba(0,0,0,.45)}
+.t-black{--bg:#000;--bg2:#070707;--panel:#0c0c0c;--card:#101010;--card2:#181818;--bd:#222;--bd2:#333;--tx:#f4f4f4;--tx2:#bdbdbd;--mu:#777;--ac:#ededed;--actx:#000;--ok:#3ecf8e;--warn:#f5c451;--bad:#ff5c5c;--edge:#3a3a3a;--dot:#171717;--sh:0 10px 30px rgba(0,0,0,.7)}
+.t-graphite{--bg:#1c1e22;--bg2:#202227;--panel:#23262b;--card:#272a30;--card2:#2e3138;--bd:#343840;--bd2:#444952;--tx:#e7e9ec;--tx2:#b9bec6;--mu:#868c96;--ac:#e8a33d;--actx:#1c1e22;--ok:#5bb98b;--warn:#e8a33d;--bad:#e5534b;--edge:#4b5059;--dot:#2a2d33;--sh:0 10px 30px rgba(0,0,0,.4)}
+.t-ocean{--bg:#0a1722;--bg2:#0d1c29;--panel:#0f2131;--card:#112536;--card2:#163045;--bd:#1c3a52;--bd2:#285171;--tx:#e3f1fb;--tx2:#a9c7dd;--mu:#6f93ad;--ac:#3fb6f2;--actx:#04121c;--ok:#2fc4a0;--warn:#f2c14e;--bad:#f2645a;--edge:#2a5373;--dot:#132a3c;--sh:0 10px 30px rgba(0,0,0,.45)}
+.t-paper{--bg:#f3eee3;--bg2:#ece6d8;--panel:#faf7f0;--card:#fdfbf6;--card2:#f4efe4;--bd:#ddd3bf;--bd2:#c9bda4;--tx:#2c2720;--tx2:#574f42;--mu:#8a7f6b;--ac:#b4552d;--actx:#fff;--ok:#4f7f3a;--warn:#b7791f;--bad:#b3261e;--edge:#a89b82;--dot:#e0d6c2;--sh:0 8px 24px rgba(80,60,30,.15)}
+.t-light{--bg:#f7f7f8;--bg2:#fff;--panel:#fff;--card:#fff;--card2:#f4f4f5;--bd:#e4e4e7;--bd2:#d4d4d8;--tx:#18181b;--tx2:#3f3f46;--mu:#71717a;--ac:#4f46e5;--actx:#fff;--ok:#16a34a;--warn:#ca8a04;--bad:#dc2626;--edge:#c4c4cc;--dot:#e4e4e8;--sh:0 8px 24px rgba(0,0,0,.08)}
+
+#app{height:calc(100vh - 46px);display:flex;background:var(--bg);color:var(--tx);font-size:13px;position:relative;overflow:hidden}
+.main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative}
+.area{flex:1;position:relative;overflow:hidden}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:8px;color:var(--tx2);font-size:12px}
+.btn:hover{background:var(--card2);color:var(--tx)}
+.btn.on{background:color-mix(in srgb,var(--ac) 18%,transparent);color:var(--ac)}
+.btn.pri{background:var(--ac);color:var(--actx)}
+.ti{font-size:16px}
+
+/* canvas */
+.vp{position:absolute;inset:0;overflow:hidden;cursor:default;background-color:var(--bg);background-image:radial-gradient(var(--dot) 1.2px,transparent 1.2px)}
+.vp.panning{cursor:grabbing}
+.world{position:absolute;left:0;top:0;transform-origin:0 0}
+.world svg.edges{position:absolute;left:0;top:0;width:2400px;height:1300px;overflow:visible;pointer-events:none}
+.e{fill:none;stroke:var(--edge);stroke-width:1.6}
+.e.done{stroke:color-mix(in srgb,var(--ok) 70%,var(--edge))}
+.e.wait{stroke-dasharray:6 5}
+.e.sel{stroke:var(--ac);stroke-width:2.4}
+.e.ghost{stroke:var(--ac);stroke-dasharray:4 4}
+.ed{fill:var(--edge)}.ed.done{fill:var(--ok)}.ed.sel,.ed.ghost{fill:var(--ac)}
+.sk{fill:none;stroke:var(--tx2);stroke-width:1.5;stroke-linecap:round}
+.frame{position:absolute;border:1px dashed var(--bd2);border-radius:18px;background:color-mix(in srgb,var(--card) 25%,transparent)}
+.frame .fl{position:absolute;top:-26px;left:6px;font-size:12px;color:var(--mu);display:flex;gap:8px;align-items:center;white-space:nowrap}
+.frame .fl b{color:var(--tx2);font-weight:500}
+.frame .fl .mini{width:60px;height:4px;border-radius:2px;background:var(--bd);overflow:hidden}
+.frame .fl .mini i{display:block;height:100%;background:var(--ok)}
+.node{position:absolute;user-select:none}
+.card{width:250px;background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:12px 12px 10px;box-shadow:var(--sh);transition:opacity .2s,box-shadow .2s,border-color .2s}
+.card:hover{border-color:var(--bd2)}
+.card.sel{border-color:var(--ac);box-shadow:0 0 0 3px color-mix(in srgb,var(--ac) 25%,transparent),var(--sh)}
+.card.ghost{border:1.5px dashed var(--ac);background:color-mix(in srgb,var(--ac) 7%,var(--card));opacity:.9}
+.c-head{display:flex;align-items:center;gap:6px;margin-bottom:8px}
+.c-key{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mu)}
+.who{font-size:10px;letter-spacing:.04em;text-transform:uppercase;padding:2px 6px;border-radius:5px;background:var(--card2);color:var(--tx2)}
+.who.ai{color:var(--ac)}
+.pill{margin-left:auto;display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 7px;border-radius:999px;white-space:nowrap}
+.pill .ti{font-size:13px}
+.p-done{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok)}
+.p-active{background:color-mix(in srgb,var(--warn) 16%,transparent);color:var(--warn)}
+.p-ready{background:color-mix(in srgb,var(--ac) 16%,transparent);color:var(--ac)}
+.p-blocked{background:var(--card2);color:var(--mu)}
+.c-title{font-size:15px;font-weight:600;line-height:1.3;margin-bottom:8px}
+.c-prog{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--mu);margin-bottom:8px}
+.bar{flex:1;height:4px;border-radius:2px;background:var(--bd);overflow:hidden}
+.bar i{display:block;height:100%;background:var(--ok);border-radius:2px}
+.c-tasks{list-style:none;display:flex;flex-direction:column;gap:2px}
+.c-tasks li,.i-tasks li{display:flex;align-items:center;gap:7px;padding:3px 2px;border-radius:6px;font-size:12px;color:var(--tx2)}
+.c-tasks li:hover{background:var(--card2)}
+.chk{width:16px;height:16px;flex:none;border-radius:50%;border:1.5px solid var(--bd2);display:grid;place-items:center}
+.chk .ti{font-size:11px;opacity:0}
+li.done .chk{background:var(--ok);border-color:var(--ok);color:var(--actx)}
+li.done .chk .ti{opacity:1}
+li.done .tt{color:var(--mu)}
+.tid{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--mu);flex:none}
+.tt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.subc{font-size:10px;color:var(--mu);font-family:'JetBrains Mono',monospace}
+.c-foot{display:flex;gap:10px;flex-wrap:wrap;margin-top:8px;padding-top:8px;border-top:1px solid var(--bd);font-size:11px;color:var(--mu)}
+.c-foot span{display:inline-flex;align-items:center;gap:4px}
+.c-foot .ti{font-size:13px}
+.hi{color:var(--warn)}
+.gate{width:120px;display:flex;flex-direction:column;align-items:center;gap:8px}
+.dia{width:46px;height:46px;transform:rotate(45deg);border:2px solid var(--warn);background:var(--card);border-radius:8px}
+.gate.st-done .dia{border-color:var(--ok);background:color-mix(in srgb,var(--ok) 20%,var(--card))}
+.gate.sel .dia{box-shadow:0 0 0 4px color-mix(in srgb,var(--ac) 30%,transparent)}
+.g-label{text-align:center;font-size:12px;font-weight:600}
+.g-label small{display:block;font-weight:400;color:var(--mu);font-size:11px}
+.sticky{width:190px;padding:12px;background:color-mix(in srgb,var(--warn) 22%,var(--card));border-radius:4px;font-family:Caveat,cursive;font-size:20px;line-height:1.1;color:var(--tx);transform:rotate(-2deg);box-shadow:var(--sh)}
+.hand{font-family:Caveat,cursive;font-size:22px;color:var(--tx2);white-space:nowrap}
+.far .c-tasks,.far .c-foot,.far .c-prog span{display:none}
+.far .c-title{font-size:24px}
+.far .card{padding:16px}
+.exec .card.st-done,.exec .gate.st-done{opacity:.28}
+.exec .card.st-blocked{opacity:.5}
+.exec .card.st-ready,.exec .card.st-active{border-color:var(--ac);box-shadow:0 0 0 2px color-mix(in srgb,var(--ac) 35%,transparent),var(--sh)}
+.exec .c-tasks li.done{display:none}
+.exec .sticky,.exec .hand,.exec .sk{opacity:.15}
+.banner{position:absolute;top:14px;left:50%;transform:translateX(-50%);z-index:20;display:flex;align-items:center;gap:10px;padding:8px 8px 8px 14px;border-radius:12px;background:var(--panel);border:1px solid var(--ac);box-shadow:var(--sh);font-size:12px;white-space:nowrap}
+.banner .ti-sparkles{color:var(--ac)}
+.toolbar{position:absolute;z-index:10;display:flex;gap:2px;padding:5px;background:var(--panel);border:1px solid var(--bd);border-radius:12px;box-shadow:var(--sh)}
+.toolbar button{width:34px;height:34px;border-radius:8px;display:grid;place-items:center;color:var(--tx2);position:relative}
+.toolbar button:hover{background:var(--card2)}
+.toolbar button.on{background:color-mix(in srgb,var(--ac) 22%,transparent);color:var(--ac)}
+.toolbar button sub{position:absolute;right:3px;bottom:2px;font-size:8px;color:var(--mu)}
+.toolbar .sep{width:1px;background:var(--bd);margin:4px 3px}
+.zoom{position:absolute;z-index:10;display:flex;align-items:center;gap:2px;padding:4px;background:var(--panel);border:1px solid var(--bd);border-radius:10px;font-size:12px;color:var(--tx2)}
+.zoom button{width:28px;height:28px;border-radius:6px;display:grid;place-items:center}
+.zoom button:hover{background:var(--card2)}
+.zoom .zl{min-width:44px;text-align:center}
+.empty-hint{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none}
+.empty-hint>div{text-align:center;pointer-events:auto;max-width:460px}
+.empty-hint h2{font-size:20px;font-weight:600;margin-bottom:6px}
+.empty-hint p{color:var(--mu);margin-bottom:16px;line-height:1.5}
+.chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center}
+.chip{padding:7px 12px;border-radius:999px;border:1px solid var(--bd);background:var(--panel);font-size:12px;color:var(--tx2);display:inline-flex;gap:6px;align-items:center}
+.chip:hover{border-color:var(--ac);color:var(--tx)}
+pre.code{font-family:'JetBrains Mono',monospace;font-size:11.5px;line-height:1.6;background:var(--card2);border:1px solid var(--bd);border-radius:10px;padding:12px;color:var(--tx2);white-space:pre-wrap;text-align:left}
+
+/* inspector */
+.insp{width:370px;flex:none;background:var(--panel);border-left:1px solid var(--bd);display:flex;flex-direction:column;overflow:hidden}
+.insp-scroll{overflow-y:auto;padding:16px 18px 24px;flex:1}
+.i-top{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--bd)}
+.i-tabs{display:flex;gap:2px}
+.i-title{font-size:19px;font-weight:600;line-height:1.3;margin:10px 0 12px}
+.meta{display:grid;grid-template-columns:110px 1fr;gap:8px 10px;font-size:12px;margin-bottom:16px}
+.meta dt{color:var(--mu);display:flex;align-items:center;gap:6px}
+.meta dd{color:var(--tx2);display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.dep{font-family:'JetBrains Mono',monospace;font-size:11px;padding:2px 7px;border-radius:6px;background:var(--card2);border:1px solid var(--bd);cursor:pointer}
+.dep:hover{border-color:var(--ac)}
+.dep.ok{color:var(--ok)}
+.i-desc{color:var(--tx2);line-height:1.55;margin-bottom:16px}
+.i-h{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--mu);margin:18px 0 8px;display:flex;justify-content:space-between}
+.i-tasks{list-style:none}
+.i-tasks li{padding:5px 4px;font-size:13px}
+.i-tasks li.sub{padding-left:26px;font-size:12px}
+.add{color:var(--mu);font-size:12px;padding:6px 4px;display:flex;gap:6px;align-items:center}
+.cm{display:flex;gap:10px;margin-bottom:12px}
+.av{width:26px;height:26px;border-radius:50%;flex:none;display:grid;place-items:center;background:var(--card2);color:var(--tx2)}
+.av.ai{background:color-mix(in srgb,var(--ac) 20%,transparent);color:var(--ac)}
+.cm b{font-weight:500;font-size:12px}.cm small{color:var(--mu);font-size:11px;margin-left:6px}
+.cm p{color:var(--tx2);font-size:12.5px;line-height:1.5;margin-top:2px}
+.input{border:1px solid var(--bd);border-radius:10px;padding:9px 11px;color:var(--mu);font-size:12px;background:var(--card)}
+
+/* overview / list */
+.page{position:absolute;inset:0;overflow-y:auto;padding:28px 34px}
+.page h1{font-size:22px;font-weight:600;margin-bottom:4px}
+.page .sub{color:var(--mu);margin-bottom:22px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;max-width:1150px}
+.box{background:var(--panel);border:1px solid var(--bd);border-radius:14px;padding:16px 18px}
+.box h3{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--mu);font-weight:500;margin-bottom:12px}
+.big{font-size:34px;font-weight:600}
+.row{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--bd);font-size:13px}
+.row:last-child{border-bottom:0}
+.row .grow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row .m{color:var(--mu);font-size:12px}
+.ph{margin-bottom:12px}
+.ph div{display:flex;justify-content:space-between;font-size:12px;color:var(--tx2);margin-bottom:5px}
+table.list{width:100%;max-width:1150px;border-collapse:collapse;font-size:13px}
+table.list th{text-align:left;font-weight:500;color:var(--mu);font-size:11px;letter-spacing:.05em;text-transform:uppercase;padding:8px 10px;border-bottom:1px solid var(--bd)}
+table.list td{padding:8px 10px;border-bottom:1px solid var(--bd);color:var(--tx2)}
+table.list tr:hover td{background:var(--card)}
+table.list td.done{color:var(--mu);text-decoration:line-through}
+.filters{display:flex;gap:6px;margin-bottom:16px}
+
+/* concept A */
+.A .sb{width:262px;flex:none;background:var(--bg2);border-right:1px solid var(--bd);display:flex;flex-direction:column;font-size:12.5px}
+.A .sb-top{padding:12px;display:flex;flex-direction:column;gap:10px}
+.logo{display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px}
+.logo .mk{width:20px;height:20px;border-radius:6px;background:var(--ac);color:var(--actx);display:grid;place-items:center;font-size:12px}
+.search{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:8px;background:var(--card);border:1px solid var(--bd);color:var(--mu)}
+.search kbd{margin-left:auto}
+.sec{padding:12px 12px 6px;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--mu);display:flex;justify-content:space-between;align-items:center}
+.tree div{display:flex;align-items:center;gap:7px;padding:5px 12px;color:var(--tx2);cursor:pointer}
+.tree div:hover{background:var(--card)}
+.tree div.on{background:var(--card2);color:var(--tx)}
+.tree .ind{padding-left:28px}
+.tree .ti{font-size:15px;color:var(--mu)}
+.flt{display:flex;margin:0 12px 6px;padding:2px;border-radius:8px;background:var(--card)}
+.flt button{flex:1;padding:4px;border-radius:6px;font-size:11.5px;color:var(--mu)}
+.flt button.on{background:var(--card2);color:var(--tx)}
+.outline{flex:1;overflow-y:auto}
+.ol{display:flex;align-items:center;gap:7px;padding:5px 12px;cursor:pointer;color:var(--tx2)}
+.ol:hover{background:var(--card)}
+.ol.on{background:var(--card2);color:var(--tx)}
+.ol .k{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--mu);width:22px}
+.ol .n{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ol .c{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--mu)}
+.sicon.done{color:var(--ok)}.sicon.active{color:var(--warn)}.sicon.ready{color:var(--ac)}.sicon.blocked{color:var(--mu)}
+.sb-foot{padding:10px 12px;border-top:1px solid var(--bd);display:flex;align-items:center;gap:8px;color:var(--tx2);font-size:12px}
+.dotok{width:8px;height:8px;border-radius:50%;background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 25%,transparent)}
+.A .tabs{height:40px;display:flex;align-items:stretch;border-bottom:1px solid var(--bd);background:var(--bg2)}
+.A .tab{display:flex;align-items:center;gap:7px;padding:0 14px;border-right:1px solid var(--bd);color:var(--mu);font-size:12.5px;cursor:pointer}
+.A .tab.on{background:var(--bg);color:var(--tx);box-shadow:inset 0 2px 0 var(--ac)}
+.A .tabs .right{margin-left:auto;display:flex;align-items:center;gap:4px;padding:0 8px}
+.A .crumbs{height:36px;display:flex;align-items:center;gap:8px;padding:0 14px;border-bottom:1px solid var(--bd);font-size:12px;color:var(--mu)}
+.A .crumbs b{color:var(--tx);font-weight:500}
+.A .crumbs .views{margin-left:auto;display:flex;gap:2px}
+.A .card{width:240px;padding:10px 11px 9px;border-radius:10px}
+.A .c-title{font-size:14px}
+.A .toolbar{top:12px;left:50%;transform:translateX(-50%)}
+.A .zoom{left:12px;bottom:40px}
+.A .status{height:28px;display:flex;align-items:center;gap:16px;padding:0 12px;border-top:1px solid var(--bd);background:var(--bg2);font-size:11.5px;color:var(--mu)}
+.A .status span{display:inline-flex;align-items:center;gap:5px}
+
+/* concept B */
+.B .fp{position:absolute;z-index:12;display:flex;align-items:center;gap:4px;padding:5px;background:var(--panel);border:1px solid var(--bd);border-radius:14px;box-shadow:var(--sh)}
+.B .tl{top:14px;left:14px}
+.B .tr{top:14px;right:14px}
+.B .toolbar{bottom:18px;left:50%;transform:translateX(-50%);border-radius:14px;padding:6px}
+.B .toolbar button{width:40px;height:40px}
+.B .zoom{left:14px;bottom:18px;border-radius:12px}
+.B .menu{position:absolute;top:60px;left:14px;z-index:13;width:280px;background:var(--panel);border:1px solid var(--bd);border-radius:14px;box-shadow:var(--sh);padding:6px}
+.B .menu div{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;cursor:pointer;color:var(--tx2)}
+.B .menu div:hover{background:var(--card2)}
+.B .insp{position:absolute;right:14px;top:70px;bottom:80px;border:1px solid var(--bd);border-radius:16px;box-shadow:var(--sh);z-index:11}
+.sketch .card{border-radius:255px 18px 225px 18px/18px 225px 18px 255px;border:1.5px solid var(--tx2);box-shadow:none;padding:14px 14px 10px}
+.sketch .card.sel{border-color:var(--ac)}
+.sketch .card .c-title{font-family:Caveat,cursive;font-size:22px;font-weight:600}
+.sketch .frame{border:1.5px dashed var(--bd2);border-radius:28px}
+.sketch .frame .fl{font-family:Caveat,cursive;font-size:22px;top:-32px}
+.sketch .e{stroke-width:1.8}
+.B .page{padding-top:80px}
+.B .minimap{position:absolute;right:14px;bottom:18px;z-index:10;width:150px;height:84px;background:var(--panel);border:1px solid var(--bd);border-radius:12px;box-shadow:var(--sh)}
+
+/* concept C */
+.C .rail{width:54px;flex:none;background:var(--bg2);border-right:1px solid var(--bd);display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 0}
+.C .rail button{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;color:var(--mu)}
+.C .rail button .ti{font-size:19px}
+.C .rail button:hover{background:var(--card);color:var(--tx)}
+.C .rail button.on{background:var(--card2);color:var(--ac)}
+.C .rail .sp{flex:1}
+.C .cp{width:236px;flex:none;background:var(--bg2);border-right:1px solid var(--bd);padding:14px 10px;display:flex;flex-direction:column;gap:4px;overflow-y:auto}
+.C .cp h4{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--mu);font-weight:500;margin:10px 6px 6px}
+.C .bd{display:flex;align-items:center;gap:10px;padding:8px;border-radius:10px;cursor:pointer;color:var(--tx2)}
+.C .bd:hover{background:var(--card)}
+.C .bd.on{background:var(--card2);color:var(--tx)}
+.C .bd small{display:block;color:var(--mu);font-size:11px}
+.ring{width:26px;height:26px;flex:none}
+.C header{height:52px;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid var(--bd)}
+.C header .cr{font-size:12px;color:var(--mu)}
+.C header .cr b{color:var(--tx);font-weight:600;font-size:14px}
+.C .segc{display:flex;padding:3px;border-radius:10px;background:var(--card);border:1px solid var(--bd);margin-left:16px}
+.C .segc button{padding:5px 12px;border-radius:7px;font-size:12px;color:var(--mu);display:flex;gap:6px;align-items:center}
+.C .segc button.on{background:var(--card2);color:var(--tx)}
+.C header .right{margin-left:auto;display:flex;gap:4px;align-items:center}
+.C .toolbar{left:14px;top:50%;transform:translateY(-50%);flex-direction:column}
+.C .toolbar .sep{width:auto;height:1px;margin:3px 4px}
+.C .zoom{right:14px;bottom:14px}
+.C .tline{height:58px;border-top:1px solid var(--bd);background:var(--bg2);position:relative;padding:0 24px}
+.C .tline .axis{position:absolute;left:24px;right:24px;top:30px;height:2px;background:var(--bd)}
+.C .tline .mk{position:absolute;top:22px;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:4px;font-size:10.5px;color:var(--mu);cursor:pointer;white-space:nowrap}
+.C .tline .mk i{width:10px;height:10px;border-radius:3px;transform:rotate(45deg);background:var(--bd2);display:block;margin-top:4px}
+.C .tline .mk.done i{background:var(--ok)}.C .tline .mk.active i{background:var(--warn)}
+.C .tline .today{position:absolute;top:8px;bottom:8px;width:2px;background:var(--ac)}
+.C .tline .today span{position:absolute;top:-2px;left:6px;font-size:10px;color:var(--ac)}
+.C .insp{position:absolute;right:0;top:0;bottom:0;box-shadow:-20px 0 40px rgba(0,0,0,.25);z-index:15}
+.C .card{border-radius:16px;padding:14px}
+.C .card .c-head .who{order:-1}
+</style>
+</head>
+<body>
+<div id="pbar"></div>
+<div id="app"></div>
+<script>
+const WHO={me:'Я',ai:'AI · Claude',both:'Я + AI'};
+const STL={done:'Готово',active:'В роботі',ready:'Можна починати',blocked:'Заблоковано'};
+const STI={done:'ti-circle-check',active:'ti-progress',ready:'ti-player-play',blocked:'ti-lock'};
+let S=[
+{id:'S0',title:'Власник: репо і середовище',who:'me',x:60,y:120,due:'6 лист.',prio:'high',desc:'Кроки, які робиш ти, а не агент. Без них агент не почне M0.',tasks:[{id:'S0-01',t:'Створити репо на GitHub',d:1},{id:'S0-02',t:'Встановити Rust і Node',d:1},{id:'S0-03',t:'Ubuntu у WSL для тесту Linux',d:1},{id:'S0-04',t:'Погодити специфікацію й дизайн',d:1}],comments:[]},
+{id:'M0',title:'Ядро і формат файлів',who:'ai',x:360,y:120,due:'14 лист.',prio:'high',branch:'feat/core',desc:'pathloom-core: формат файлів етапів і дошок, граф залежностей, обчислення ready/blocked. На цьому стоїть усе інше.',tasks:[{id:'M0-01',t:'Формат stage-файлу (.md + frontmatter)',d:1},{id:'M0-02',t:'Формат board.json',sub:[{id:'M0-02a',t:'Стабільне сортування ключів',d:1},{id:'M0-02b',t:'Атомарний запис',d:1}]},{id:'M0-03',t:'Граф залежностей, пошук циклів',d:1},{id:'M0-04',t:'Обчислення ready / blocked',d:0},{id:'M0-05',t:'File watcher',d:0}],comments:[{a:'ai',n:'Claude',w:'2 год тому',t:'M0-03 готово: цикл A→B→A тепер відхиляється з помилкою CYCLE і списком вузлів. Тести в core/tests/graph.rs.'},{a:'me',n:'Ти',w:'1 год тому',t:'Ок. Для M0-05 перевір, як воно поводиться, коли git checkout міняє 50 файлів разом.'}]},
+{id:'M1',title:'Полотно: фігури і стрілки',who:'ai',x:700,y:40,due:'28 лист.',prio:'high',branch:'feat/canvas',desc:'Базове полотно рівня Excalidraw.',tasks:[{id:'M1-01',t:'Pan / zoom і сітка',d:0},{id:'M1-02',t:'Прямокутник, еліпс, ромб',d:0},{id:'M1-03',t:'Олівець (perfect-freehand)',d:0},{id:'M1-04',t:'Стрілки з прив\'язкою',d:0},{id:'M1-05',t:'Undo / redo',d:0},{id:'M1-06',t:'Semantic zoom',d:0}],comments:[]},
+{id:'M2',title:'CLI pathloom',who:'ai',x:700,y:420,due:'21 лист.',prio:'med',branch:'feat/cli',desc:'Агент і людина працюють з планом із терміналу.',tasks:[{id:'M2-01',t:'pathloom init',d:0},{id:'M2-02',t:'stage add / task done',d:0},{id:'M2-03',t:'pathloom next',d:0},{id:'M2-04',t:'pathloom validate',d:0}],comments:[]},
+{id:'M3',title:'Картки етапів і зв\'язки',who:'ai',x:1010,y:40,due:'5 груд.',prio:'high',desc:'Картка = етап зі списком задач. Стрілка між картками = залежність.',tasks:[{id:'M3-01',t:'Картка етапу',d:0},{id:'M3-02',t:'Задачі з ID усередині',d:0},{id:'M3-03',t:'Залежність стрілкою',d:0},{id:'M3-04',t:'Execution mode',d:0}],comments:[]},
+{id:'M4',title:'MCP-сервер і skill',who:'ai',x:1010,y:420,due:'10 груд.',prio:'high',desc:'Агент створює й міняє дошки без відкритого застосунку.',tasks:[{id:'M4-01',t:'rmcp stdio сервер',d:0},{id:'M4-02',t:'Batch apply spec',d:0},{id:'M4-03',t:'Skill для Claude Code',d:0},{id:'M4-04',t:'Live reload у застосунку',d:0}],comments:[]},
+{id:'G1',gate:1,title:'MVP-демо',x:1330,y:330,due:'12 груд.'},
+{id:'M5',title:'Інсталятори і CI',who:'both',x:1490,y:120,due:'19 груд.',prio:'med',desc:'Збірка під три ОС.',tasks:[{id:'M5-01',t:'Зробити репо публічним',d:0},{id:'M5-02',t:'GitHub Actions: Win / macOS / Linux',d:0},{id:'M5-03',t:'Тест на Linux у друга',d:0}],comments:[]},
+{id:'M6',title:'Публічний реліз 0.1',who:'me',x:1800,y:120,due:'26 груд.',prio:'med',desc:'Перший реліз для людей.',tasks:[{id:'M6-01',t:'README і скріншоти',d:0},{id:'M6-02',t:'FUNDING.yml з гаманцем',d:0},{id:'M6-03',t:'Пост-анонс',d:0}],comments:[]}
+];
+let E=[['S0','M0'],['M0','M1'],['M0','M2'],['M1','M3'],['M2','M4'],['M3','M4',1],['M3','G1'],['M4','G1'],['G1','M5'],['M5','M6']];
+const GHOST={id:'M7',ghost:1,title:'Task list view',who:'ai',x:1010,y:760,due:'8 груд.',prio:'med',desc:'Запропоновано агентом: таблиця всіх задач з фільтрами.',tasks:[{id:'M7-01',t:'Таблиця задач',d:0},{id:'M7-02',t:'Фільтри ready / blocked',d:0}],comments:[]};
+const FR=[{t:'Фаза 1 · Фундамент',m:['S0','M0']},{t:'Фаза 2 · Полотно і агенти',m:['M1','M2','M3','M4']},{t:'Фаза 3 · Реліз',m:['M5','M6']}];
+const st={concept:'a',screen:'board',theme:'midnight',sel:'M0',exec:false,s:.7,tx:0,ty:0,fit:true,filter:'all',ghost:false,tab:'d',tool:'select',menu:false,style:'clean'};
+const DEF={a:'midnight',b:'paper',c:'ocean'};
+
+const nodes=()=>st.ghost?S.concat([GHOST]):S;
+const by=id=>nodes().find(n=>n.id===id);
+const edges=()=>st.ghost?E.concat([['M3','M7',0,1]]):E;
+const tdone=t=>t.sub?t.sub.every(s=>s.d):!!t.d;
+const cnt=n=>[n.tasks.filter(tdone).length,n.tasks.length];
+const preds=id=>edges().filter(e=>e[1]===id);
+function status(id){const n=by(id);
+ if(n.gate)return preds(id).every(e=>status(e[0])==='done')?'done':'blocked';
+ const [d,t]=cnt(n);if(d===t)return 'done';
+ if(preds(id).some(e=>!e[2]&&status(e[0])!=='done'))return 'blocked';
+ return d>0?'active':'ready';}
+
+function taskLi(n,t,i){const sd=t.sub?t.sub.filter(s=>s.d).length:0;
+ return `<li class="${tdone(t)?'done':''}"><button class="chk" data-act="tg" data-p="${n.id}|${i}"><i class="ti ti-check"></i></button><span class="tid">${t.id}</span><span class="tt">${t.t}</span>${t.sub?`<span class="subc">${sd}/${t.sub.length}</span>`:''}</li>`;}
+function cardHTML(n){
+ if(n.gate){const s=status(n.id),p=preds(n.id),d=p.filter(e=>status(e[0])==='done').length;
+  return `<div class="node gate st-${s} ${st.sel===n.id?'sel':''}" data-id="${n.id}" style="left:${n.x}px;top:${n.y}px"><div class="dia"></div><div class="g-label">${n.title}<small>${d} з ${p.length} входів · ${n.due}</small></div></div>`;}
+ const s=status(n.id),[d,t]=cnt(n);
+ return `<div class="node card st-${s} ${st.sel===n.id?'sel':''} ${n.ghost?'ghost':''}" data-id="${n.id}" style="left:${n.x}px;top:${n.y}px">
+ <div class="c-head"><span class="c-key">${n.id}</span><span class="who ${n.who}">${WHO[n.who]}</span><span class="pill p-${s}"><i class="ti ${STI[s]}"></i>${n.ghost?'Пропозиція':STL[s]}</span></div>
+ <div class="c-title">${n.title}</div>
+ <div class="c-prog"><div class="bar"><i style="width:${t?d/t*100:0}%"></i></div><span>${d} з ${t}</span></div>
+ <ul class="c-tasks">${n.tasks.map((x,i)=>taskLi(n,x,i)).join('')}</ul>
+ <div class="c-foot"><span><i class="ti ti-calendar"></i>до ${n.due}</span>${n.prio==='high'?'<span class="hi"><i class="ti ti-flag"></i>Високий</span>':''}${n.branch?`<span><i class="ti ti-git-branch"></i>${n.branch}</span>`:''}</div></div>`;}
+
+function rough(pts){let r=7,o='';const j=()=>{r=(r*16807)%2147483647;return (r/2147483647-.5)*3};
+ for(let k=0;k<2;k++)o+=`<path class="sk" d="M${pts.map(p=>(p[0]+j())+','+(p[1]+j())).join(' L')}"/>`;return o;}
+
+function boardHTML(empty){
+ const tb=['ti-hand-stop|hand|H','ti-pointer|select|1','sep','ti-square|rect|2','ti-diamond|dia|3','ti-circle|ell|4','ti-arrow-up-right|arrow|5','ti-pencil|pen|6','ti-typography|text|7','ti-photo|img|8','ti-note|sticky|9','ti-frame|frame|F','ti-eraser|erase|0','sep','ti-layout-cards|stage|S'];
+ const tools=`<div class="toolbar">${tb.map(x=>{if(x==='sep')return '<div class="sep"></div>';const [i,k,sc]=x.split('|');return `<button class="${st.tool===k?'on':''}" data-act="tool" data-k="${k}" title="${k==='stage'?'Картка етапу':k} (${sc})"><i class="ti ${i}"></i><sub>${sc}</sub></button>`}).join('')}</div>`;
+ const zoom=`<div class="zoom"><button data-act="zout" aria-label="Зменшити"><i class="ti ti-minus"></i></button><span class="zl" id="zl">${Math.round(st.s*100)}%</span><button data-act="zin" aria-label="Збільшити"><i class="ti ti-plus"></i></button><button data-act="fit" title="Вмістити все"><i class="ti ti-maximize"></i></button><span style="width:1px;height:18px;background:var(--bd)"></span><button aria-label="Undo"><i class="ti ti-arrow-back-up"></i></button><button aria-label="Redo"><i class="ti ti-arrow-forward-up"></i></button></div>`;
+ const banner=st.ghost?`<div class="banner"><i class="ti ti-sparkles"></i>Claude пропонує: <b>1 етап</b> і <b>1 зв'язок</b><button class="btn pri" data-act="accept"><i class="ti ti-check"></i>Прийняти</button><button class="btn" data-act="reject">Відхилити</button></div>`:'';
+ if(empty)return `<div class="vp" id="vp"><div class="world" id="world"></div></div>${tools}${zoom}<div class="empty-hint"><div><h2>Порожня дошка</h2><p>Малюй одразу: обери інструмент або натисни <kbd>2</kbd>. Для плану додай картку етапу <kbd>S</kbd>. Або попроси агента.</p><div class="chips" style="margin-bottom:16px"><span class="chip"><i class="ti ti-map"></i>Roadmap</span><span class="chip"><i class="ti ti-sitemap"></i>Архітектура</span><span class="chip"><i class="ti ti-bulb"></i>Брейншторм</span><span class="chip"><i class="ti ti-layout-kanban"></i>Kanban</span></div><pre class="code">$ pathloom stage add "Прототип" --after M0
+# або в Claude Code: «сплануй MVP на цій дошці»</pre></div></div>`;
+ return `<div class="vp" id="vp"><div class="world ${st.exec?'exec':''}" id="world">
+ ${FR.map((f,i)=>`<div class="frame" data-fr="${i}"><div class="fl"><b>${f.t}</b><span class="mini"><i></i></span><span class="fc"></span></div></div>`).join('')}
+ <svg class="edges" id="edges"></svg>
+ ${nodes().map(cardHTML).join('')}
+ <div class="node sticky" style="left:380px;top:520px">Перевірити WebKitGTK у WSL до старту M1!</div>
+ <div class="node hand" style="left:372px;top:72px">почни тут ↓</div>
+ </div></div>${banner}${tools}${zoom}`;}
+
+function layout(){const w=document.getElementById('world');if(!w)return;
+ const box=id=>{const el=w.querySelector(`[data-id="${id}"]`);return el&&{x:el.offsetLeft,y:el.offsetTop,w:el.offsetWidth,h:el.offsetHeight,g:el.classList.contains('gate')};};
+ FR.forEach((f,i)=>{const bs=f.m.map(box);const x=Math.min(...bs.map(b=>b.x))-26,y=Math.min(...bs.map(b=>b.y))-26,x2=Math.max(...bs.map(b=>b.x+b.w))+26,y2=Math.max(...bs.map(b=>b.y+b.h))+26;
+  const el=w.querySelector(`[data-fr="${i}"]`);Object.assign(el.style,{left:x+'px',top:y+'px',width:x2-x+'px',height:y2-y+'px'});
+  const done=f.m.filter(m=>status(m)==='done').length;el.querySelector('.mini i').style.width=done/f.m.length*100+'%';el.querySelector('.fc').textContent=`${done} з ${f.m.length} етапів`;});
+ let svg='';edges().forEach(([a,b,soft,gh])=>{const A=box(a),B=box(b);if(!A||!B)return;
+  const x1=A.g?A.x+A.w/2+30:A.x+A.w,y1=A.g?A.y+23:A.y+44,x2=B.g?B.x+B.w/2-30:B.x,y2=B.g?B.y+23:B.y+44,dx=Math.max(40,(x2-x1)/2);
+  const c=gh?'ghost':(st.sel===a||st.sel===b)?'sel':status(a)==='done'?'done':'';
+  svg+=`<path class="e ${c} ${soft||status(b)==='blocked'?'wait':''}" d="M${x1},${y1} C${x1+dx},${y1} ${x2-dx},${y2} ${x2},${y2}"/><circle class="ed ${c}" cx="${x2}" cy="${y2}" r="3.5"/>`;});
+ svg+=rough([[570,560],[620,540],[660,480],[690,440]])+rough([[680,452],[690,440],[693,456]]);
+ document.getElementById('edges').innerHTML=svg;
+ if(st.fit){fit();st.fit=false}else apply();}
+function apply(){const w=document.getElementById('world');if(!w)return;w.style.transform=`translate(${st.tx}px,${st.ty}px) scale(${st.s})`;w.classList.toggle('far',st.s<.55);const z=document.getElementById('zl');if(z)z.textContent=Math.round(st.s*100)+'%';}
+function fit(){const vp=document.getElementById('vp');if(!vp)return;const ns=[...document.querySelectorAll('#world .node')];
+ const x=Math.min(...ns.map(n=>n.offsetLeft))-40,y=Math.min(...ns.map(n=>n.offsetTop))-60,x2=Math.max(...ns.map(n=>n.offsetLeft+n.offsetWidth))+40,y2=Math.max(...ns.map(n=>n.offsetTop+n.offsetHeight))+40;
+ st.s=Math.min(vp.clientWidth/(x2-x),vp.clientHeight/(y2-y),1);st.tx=(vp.clientWidth-(x2-x)*st.s)/2-x*st.s;st.ty=(vp.clientHeight-(y2-y)*st.s)/2-y*st.s;apply();}
+function focus(id){const vp=document.getElementById('vp'),n=by(id);if(!vp||!n)return;if(st.s<.8)st.s=.9;st.tx=vp.clientWidth/2-(n.x+125)*st.s;st.ty=vp.clientHeight/3-(n.y+40)*st.s;apply();}
+function zoomBy(f,cx,cy){const vp=document.getElementById('vp');if(!vp)return;cx??=vp.clientWidth/2;cy??=vp.clientHeight/2;const ns=Math.min(2,Math.max(.2,st.s*f));st.tx=cx-(cx-st.tx)*ns/st.s;st.ty=cy-(cy-st.ty)*ns/st.s;st.s=ns;apply();}
+
+function mdFile(n){const dep=preds(n.id).map(e=>e[0]);let t=`---\nid: ${n.id}\ntitle: ${n.title}\nwho: ${n.who}\ndue: ${n.due}\npriority: ${n.prio}\n${n.branch?'branch: '+n.branch+'\n':''}depends: [${dep.join(', ')}]\n---\n${n.desc}\n\n`;
+ n.tasks.forEach(x=>{t+=`- [${tdone(x)?'x':' '}] ${x.id} ${x.t}\n`;(x.sub||[]).forEach(s=>t+=`  - [${s.d?'x':' '}] ${s.id} ${s.t}\n`)});
+ n.comments.forEach(c=>t+=`\n> **${c.a==='ai'?'agent:claude':'human'}** — ${c.t}\n`);return t;}
+function inspHTML(){const n=by(st.sel);if(!n||st.screen==='empty')return '';
+ const top=`<div class="i-top"><span class="c-key">${n.id}</span><div class="i-tabs" style="margin-left:8px"><button class="btn ${st.tab==='d'?'on':''}" data-act="tab" data-k="d">Деталі</button><button class="btn ${st.tab==='f'?'on':''}" data-act="tab" data-k="f"><i class="ti ti-file-text"></i>Файл</button></div><button class="btn" style="margin-left:auto" data-act="close" aria-label="Закрити"><i class="ti ti-x"></i></button></div>`;
+ if(n.gate)return `<aside class="insp">${top}<div class="insp-scroll"><div class="i-title">◆ ${n.title}</div><p class="i-desc">Контрольна точка. Пройдена, коли готові всі вхідні етапи: ${preds(n.id).map(e=>`<span class="dep ${status(e[0])==='done'?'ok':''}" data-act="go" data-k="${e[0]}">${e[0]}</span>`).join(' ')}</p><dl class="meta"><dt><i class="ti ti-calendar"></i>Ціль</dt><dd>${n.due} (необов'язково)</dd></dl></div></aside>`;
+ const s=status(n.id),dep=preds(n.id),blocks=edges().filter(e=>e[0]===n.id);
+ if(st.tab==='f')return `<aside class="insp">${top}<div class="insp-scroll"><div class="i-h"><span>plan/stages/${n.id}.md</span></div><pre class="code">${mdFile(n).replace(/</g,'&lt;')}</pre><p class="i-desc" style="margin-top:12px;font-size:12px">Це звичайний файл у твоєму репо. Агент може змінити його напряму або через <code>pathloom</code> / MCP, і картка одразу перемалюється.</p></div></aside>`;
+ return `<aside class="insp">${top}<div class="insp-scroll">
+ <span class="pill p-${s}" style="margin:0"><i class="ti ${STI[s]}"></i>${STL[s]}</span>
+ <div class="i-title">${n.title}</div>
+ <dl class="meta"><dt><i class="ti ti-user"></i>Хто робить</dt><dd><span class="who ${n.who}">${WHO[n.who]}</span></dd>
+ <dt><i class="ti ti-calendar"></i>Дедлайн</dt><dd>${n.due}</dd>
+ <dt><i class="ti ti-flag"></i>Пріоритет</dt><dd class="${n.prio==='high'?'hi':''}">${n.prio==='high'?'Високий':'Середній'}</dd>
+ ${n.branch?`<dt><i class="ti ti-git-branch"></i>Гілка</dt><dd style="font-family:JetBrains Mono,monospace;font-size:11.5px">${n.branch}</dd>`:''}
+ <dt><i class="ti ti-arrow-bar-to-right"></i>Залежить від</dt><dd>${dep.length?dep.map(e=>`<span class="dep ${status(e[0])==='done'?'ok':''}" data-act="go" data-k="${e[0]}">${e[0]}${e[2]?' ~':''}</span>`).join(''):'—'}</dd>
+ <dt><i class="ti ti-arrow-bar-right"></i>Блокує</dt><dd>${blocks.length?blocks.map(e=>`<span class="dep" data-act="go" data-k="${e[1]}">${e[1]}</span>`).join(''):'—'}</dd></dl>
+ <p class="i-desc">${n.desc}</p>
+ <div class="i-h"><span>Задачі</span><span>${cnt(n).join(' з ')}</span></div>
+ <ul class="i-tasks">${n.tasks.map((t,i)=>taskLi(n,t,i)+(t.sub||[]).map((x,j)=>`<li class="sub ${x.d?'done':''}"><button class="chk" data-act="tg" data-p="${n.id}|${i}|${j}"><i class="ti ti-check"></i></button><span class="tid">${x.id}</span><span class="tt">${x.t}</span></li>`).join('')).join('')}</ul>
+ <div class="add"><i class="ti ti-plus"></i>Додати задачу</div>
+ <div class="i-h"><span>Коментарі й нотатки</span></div>
+ ${n.comments.map(c=>`<div class="cm"><div class="av ${c.a}"><i class="ti ${c.a==='ai'?'ti-sparkles':'ti-user'}"></i></div><div><b>${c.n}</b><small>${c.w}</small><p>${c.t}</p></div></div>`).join('')||'<p class="i-desc" style="font-size:12px">Поки порожньо.</p>'}
+ <div class="input">Нотатка, фото або @claude…</div></div></aside>`;}
+
+function nextTasks(){const r=[];S.forEach(n=>{if(n.gate)return;const s=status(n.id);if(s==='ready'||s==='active')n.tasks.forEach(t=>{if(!tdone(t))r.push([n,t])})});return r;}
+function overviewHTML(){const all=S.filter(n=>!n.gate).flatMap(n=>n.tasks),d=all.filter(tdone).length,nx=nextTasks(),bl=S.filter(n=>!n.gate&&status(n.id)==='blocked');
+ return `<div class="page"><h1>my-game · Roadmap MVP</h1><p class="sub">Огляд без зайвого: що зроблено, що робити далі, що стоїть.</p><div class="grid">
+ <div class="box"><h3>Прогрес</h3><div class="big">${Math.round(d/all.length*100)}%</div><p class="m" style="color:var(--mu);margin:4px 0 14px">${d} з ${all.length} задач · ${S.filter(n=>status(n.id)==='done').length} з ${S.length} етапів</p>
+ ${FR.map(f=>{const ts=f.m.flatMap(m=>by(m).tasks),dd=ts.filter(tdone).length;return `<div class="ph"><div><span>${f.t}</span><span>${dd}/${ts.length}</span></div><div class="bar"><i style="width:${dd/ts.length*100}%"></i></div></div>`}).join('')}</div>
+ <div class="box"><h3>Що робити далі</h3>${nx.slice(0,6).map(([n,t])=>`<div class="row"><span class="tid">${t.id}</span><span class="grow">${t.t}</span><span class="who ${n.who}">${WHO[n.who]}</span></div>`).join('')||'<p class="m">Немає доступних задач.</p>'}</div>
+ <div class="box"><h3>Заблоковано</h3>${bl.slice(0,6).map(n=>`<div class="row"><i class="ti ti-lock" style="color:var(--mu)"></i><span class="grow">${n.id} · ${n.title}</span><span class="m">чекає ${preds(n.id).filter(e=>status(e[0])!=='done').map(e=>e[0]).join(', ')}</span></div>`).join('')}</div>
+ <div class="box"><h3>Дедлайни</h3>${S.filter(n=>status(n.id)!=='done').slice(0,5).map(n=>`<div class="row"><i class="ti ${n.gate?'ti-diamond':'ti-calendar'}" style="color:var(--mu)"></i><span class="grow">${n.title}</span><span class="m">${n.due}</span></div>`).join('')}</div>
+ <div class="box"><h3>Активність агента</h3><div class="row"><div class="av ai"><i class="ti ti-sparkles"></i></div><span class="grow">Закрив M0-03, додав тести</span><span class="m">2 год</span></div><div class="row"><div class="av ai"><i class="ti ti-sparkles"></i></div><span class="grow">Створив етапи M1–M4 і зв'язки</span><span class="m">вчора</span></div><div class="row"><div class="av"><i class="ti ti-user"></i></div><span class="grow">Ти закрив S0-04</span><span class="m">вчора</span></div></div>
+ </div></div>`;}
+function listHTML(){const rows=[];S.forEach(n=>{if(n.gate)return;n.tasks.forEach(t=>rows.push([n,t]))});
+ const f=st.filter,show=rows.filter(([n,t])=>f==='all'||(f==='next'&&!tdone(t)&&['ready','active'].includes(status(n.id)))||(f==='blocked'&&status(n.id)==='blocked')||(f==='done'&&tdone(t)));
+ return `<div class="page"><h1>Усі задачі</h1><p class="sub">Той самий план, що й на дошці, тільки таблицею.</p><div class="filters">${[['all','Усі'],['next','Можна робити'],['blocked','Заблоковані'],['done','Готові']].map(([k,l])=>`<button class="chip ${f===k?'on':''}" style="${f===k?'border-color:var(--ac);color:var(--tx)':''}" data-act="flt" data-k="${k}">${l}</button>`).join('')}</div>
+ <table class="list"><tr><th style="width:80px">ID</th><th>Задача</th><th style="width:220px">Етап</th><th style="width:110px">Хто</th><th style="width:150px">Стан етапу</th></tr>${show.map(([n,t])=>{const s=status(n.id);return `<tr><td class="tid">${t.id}</td><td class="${tdone(t)?'done':''}">${t.t}</td><td><span class="dep" data-act="go" data-k="${n.id}">${n.id}</span> ${n.title}</td><td><span class="who ${n.who}">${WHO[n.who]}</span></td><td><span class="pill p-${s}" style="margin:0"><i class="ti ${STI[s]}"></i>${STL[s]}</span></td></tr>`}).join('')}</table></div>`;}
+function areaHTML(){return st.screen==='overview'?overviewHTML():st.screen==='list'?listHTML():boardHTML(st.screen==='empty');}
+const ring=p=>`<svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="14" fill="none" stroke="var(--bd)" stroke-width="4"/><circle cx="18" cy="18" r="14" fill="none" stroke="var(--ok)" stroke-width="4" stroke-dasharray="${p*88} 88" transform="rotate(-90 18 18)" stroke-linecap="round"/></svg>`;
+function stagesDone(){return S.filter(n=>status(n.id)==='done').length}
+
+function shellA(){const f=st.filter2||'all';const ol=S.filter(n=>{const s=status(n.id);return f==='all'||(f==='act'&&s!=='done')||(f==='done'&&s==='done')});
+ return `<div class="A" style="display:flex;width:100%"><aside class="sb"><div class="sb-top"><div class="logo"><span class="mk">◆</span>Pathloom</div><div class="search"><i class="ti ti-search"></i>Пошук по етапах і задачах<kbd>Ctrl K</kbd></div></div>
+ <div class="sec">Папка · my-game</div><div class="tree"><div><i class="ti ti-folder-open"></i>plan</div><div class="ind ${st.screen!=='empty'?'on':''}" data-act="scr" data-k="board"><i class="ti ti-map"></i>roadmap.board</div><div class="ind ${st.screen==='empty'?'on':''}" data-act="scr" data-k="empty"><i class="ti ti-sitemap"></i>architecture.board</div><div class="ind"><i class="ti ti-bulb"></i>ideas.board</div><div class="ind"><i class="ti ti-folder"></i>stages <span style="margin-left:auto;color:var(--mu)">${S.length}</span></div></div>
+ <div class="sec">Етапи дошки <i class="ti ti-plus"></i></div><div class="flt">${[['all','Усі'],['act','Активні'],['done','Готові']].map(([k,l])=>`<button class="${f===k?'on':''}" data-act="f2" data-k="${k}">${l}</button>`).join('')}</div>
+ <div class="outline">${ol.map(n=>{const s=status(n.id),c=n.gate?'':cnt(n).join('/');return `<div class="ol ${st.sel===n.id?'on':''}" data-act="go" data-k="${n.id}"><i class="ti ${n.gate?'ti-diamond':STI[s]} sicon ${s}"></i><span class="k">${n.id}</span><span class="n">${n.title}</span>${n.prio==='high'&&s!=='done'?'<i class="ti ti-flag hi" style="font-size:12px"></i>':''}<span class="c">${c}</span></div>`}).join('')}</div>
+ <div class="sb-foot"><span class="dotok"></span>Claude Code · MCP підключено<i class="ti ti-settings" style="margin-left:auto;color:var(--mu)"></i></div></aside>
+ <section class="main"><div class="tabs"><div class="tab ${st.screen!=='empty'?'on':''}" data-act="scr" data-k="board"><i class="ti ti-map"></i>roadmap<i class="ti ti-x" style="font-size:12px"></i></div><div class="tab ${st.screen==='empty'?'on':''}" data-act="scr" data-k="empty"><i class="ti ti-sitemap"></i>architecture</div><div class="tab"><i class="ti ti-plus"></i></div>
+ <div class="right"><button class="btn ${st.exec?'on':''}" data-act="exec"><i class="ti ti-player-play"></i>Execution</button><button class="btn" data-act="ghost"><i class="ti ti-sparkles"></i>Симулювати агента</button><button class="btn pri"><i class="ti ti-share"></i>Експорт</button></div></div>
+ <div class="crumbs">my-game <i class="ti ti-chevron-right"></i> plan <i class="ti ti-chevron-right"></i><b>roadmap</b><span style="margin-left:10px">${stagesDone()} з ${S.length} етапів</span><div class="views">${[['board','ti-layout-board','Дошка'],['list','ti-list-details','Список'],['overview','ti-chart-donut','Огляд']].map(([k,i,l])=>`<button class="btn ${st.screen===k?'on':''}" data-act="scr" data-k="${k}"><i class="ti ${i}"></i>${l}</button>`).join('')}</div></div>
+ <div class="area" id="area">${areaHTML()}</div>
+ <div class="status"><span><i class="ti ti-player-play" style="color:var(--ac)"></i>${nextTasks().length} задач можна робити</span><span><i class="ti ti-lock"></i>${S.filter(n=>status(n.id)==='blocked').length} етапів заблоковано</span><span><i class="ti ti-git-branch"></i>main</span><span style="margin-left:auto">Збережено у файли · 2 с тому</span></div></section>${inspHTML()}</div>`;}
+
+function shellB(){return `<div class="B" style="width:100%"><div class="area" id="area" style="position:absolute;inset:0">${areaHTML()}</div>
+ <div class="fp tl"><button class="btn" data-act="menu"><span class="logo"><span class="mk">◆</span></span><b style="color:var(--tx);font-weight:600">roadmap</b><i class="ti ti-chevron-down"></i></button><span style="color:var(--mu);font-size:12px;padding-right:8px">${stagesDone()} з ${S.length} етапів</span></div>
+ ${st.menu?`<div class="menu"><div style="color:var(--mu);font-size:11px;cursor:default">my-game / plan</div><div data-act="scr" data-k="board"><i class="ti ti-map"></i>roadmap</div><div data-act="scr" data-k="empty"><i class="ti ti-sitemap"></i>architecture</div><div><i class="ti ti-bulb"></i>ideas</div><div style="border-top:1px solid var(--bd);border-radius:0;margin-top:4px"><i class="ti ti-plus"></i>Нова дошка</div></div>`:''}
+ <div class="fp tr"><button class="btn"><i class="ti ti-search"></i><kbd>Ctrl K</kbd></button><button class="btn ${st.screen==='list'?'on':''}" data-act="scr" data-k="list" title="Список"><i class="ti ti-list-details"></i></button><button class="btn ${st.screen==='overview'?'on':''}" data-act="scr" data-k="overview" title="Огляд"><i class="ti ti-chart-donut"></i></button><button class="btn ${st.screen==='board'?'on':''}" data-act="scr" data-k="board" title="Дошка"><i class="ti ti-layout-board"></i></button><button class="btn ${st.exec?'on':''}" data-act="exec"><i class="ti ti-player-play"></i>Execution</button><button class="btn" data-act="ghost"><i class="ti ti-sparkles"></i>Агент</button></div>
+ ${st.screen==='board'?'<div class="minimap"></div>':''}${inspHTML()}</div>`;}
+
+function shellC(){const tl=S.filter(n=>!n.gate||1);return `<div class="C" style="display:flex;width:100%"><nav class="rail"><div class="logo" style="margin-bottom:8px"><span class="mk">◆</span></div><button class="on" title="Дошки"><i class="ti ti-layout-board"></i></button><button title="Пошук"><i class="ti ti-search"></i></button><button data-act="scr" data-k="list" title="Задачі"><i class="ti ti-checklist"></i></button><button data-act="ghost" title="Агенти"><i class="ti ti-sparkles"></i></button><div class="sp"></div><button title="Налаштування"><i class="ti ti-settings"></i></button></nav>
+ <aside class="cp"><h4>my-game · дошки</h4><div class="bd ${st.screen!=='empty'?'on':''}" data-act="scr" data-k="board">${ring(stagesDone()/S.length)}<div>roadmap<small>${stagesDone()} з ${S.length} етапів</small></div></div><div class="bd ${st.screen==='empty'?'on':''}" data-act="scr" data-k="empty">${ring(0)}<div>architecture<small>порожня</small></div></div><div class="bd">${ring(.4)}<div>ideas<small>скетчі</small></div></div>
+ <h4>Фази</h4>${FR.map(f=>{const d=f.m.filter(m=>status(m)==='done').length;return `<div class="bd" data-act="go" data-k="${f.m[0]}">${ring(d/f.m.length)}<div>${f.t.split(' · ')[1]}<small>${f.t.split(' · ')[0]} · ${d}/${f.m.length}</small></div></div>`}).join('')}
+ <h4>Агент</h4><div class="bd"><span class="dotok" style="margin:0 9px"></span><div>Claude Code<small>MCP · остання дія 2 хв тому</small></div></div></aside>
+ <section class="main"><header><div class="cr">my-game / <b>roadmap</b></div><div class="segc">${[['board','ti-layout-board','Дошка'],['list','ti-list-details','Список'],['overview','ti-chart-donut','Огляд']].map(([k,i,l])=>`<button class="${st.screen===k?'on':''}" data-act="scr" data-k="${k}"><i class="ti ${i}"></i>${l}</button>`).join('')}</div>
+ <div class="right"><button class="btn ${st.exec?'on':''}" data-act="exec"><i class="ti ti-player-play"></i>Execution</button><button class="btn" data-act="ghost"><i class="ti ti-sparkles"></i>Агент</button><button class="btn pri"><i class="ti ti-share"></i>Експорт</button></div></header>
+ <div class="area" id="area">${areaHTML()}</div>
+ <div class="tline"><div class="axis"></div>${tl.map((n,i)=>`<div class="mk ${status(n.id)}" style="left:${4+i*11.5}%" data-act="go" data-k="${n.id}"><i></i>${n.id} · ${n.due}</div>`).join('')}<div class="today" style="left:17%"><span>сьогодні</span></div></div></section>
+ ${inspHTML()}</div>`;}
+
+function pbar(){return `<b>Прототип Pathloom</b><div class="seg">${[['a','A · Developer'],['b','B · Canvas'],['c','C · Hybrid']].map(([k,l])=>`<button class="${st.concept===k?'on':''}" data-act="con" data-k="${k}">${l}</button>`).join('')}</div>
+ <div class="seg">${[['board','Дошка'],['list','Список'],['overview','Огляд'],['empty','Порожня']].map(([k,l])=>`<button class="${st.screen===k?'on':''}" data-act="scr" data-k="${k}">${l}</button>`).join('')}</div>
+ <select id="th">${['midnight','black','graphite','ocean','paper','light'].map(t=>`<option ${st.theme===t?'selected':''} value="${t}">${{midnight:'Midnight purple',black:'True black',graphite:'Graphite',ocean:'Ocean',paper:'Warm paper',light:'Light minimal'}[t]}</option>`).join('')}</select>
+ <div class="seg">${[['clean','Clean'],['sketch','Sketch']].map(([k,l])=>`<button class="${st.style===k?'on':''}" data-act="sty" data-k="${k}">${l}</button>`).join('')}</div>
+ <span class="hint">Тягни полотно · колесо = zoom · клікай картки й галочки</span>`;}
+
+function render(){document.getElementById('pbar').innerHTML=pbar();const app=document.getElementById('app');app.className='t-'+st.theme+(st.style==='sketch'?' sketch':'');
+ app.innerHTML=st.concept==='a'?shellA():st.concept==='b'?shellB():shellC();
+ document.getElementById('th').onchange=e=>{st.theme=e.target.value;render()};
+ if(st.screen==='board')requestAnimationFrame(layout);else if(st.screen==='empty')apply();bindVp();}
+
+function bindVp(){const vp=document.getElementById('vp');if(!vp)return;let drag=null;
+ vp.addEventListener('wheel',e=>{e.preventDefault();const r=vp.getBoundingClientRect();zoomBy(Math.exp(-e.deltaY*.0015),e.clientX-r.left,e.clientY-r.top)},{passive:false});
+ vp.addEventListener('pointerdown',e=>{if(e.target.closest('button'))return;drag={x:e.clientX,y:e.clientY,tx:st.tx,ty:st.ty,m:false};vp.setPointerCapture(e.pointerId)});
+ vp.addEventListener('pointermove',e=>{if(!drag)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(Math.abs(dx)+Math.abs(dy)>4){drag.m=true;vp.classList.add('panning')}if(drag.m){st.tx=drag.tx+dx;st.ty=drag.ty+dy;apply()}});
+ vp.addEventListener('pointerup',e=>{vp.classList.remove('panning');if(drag&&!drag.m){const el=document.elementFromPoint(e.clientX,e.clientY),n=el&&el.closest('[data-id]');const id=n?n.dataset.id:null;if(id!==st.sel){st.sel=id;st.tab='d';render()}}drag=null});}
+
+document.addEventListener('click',e=>{const b=e.target.closest('[data-act]');if(!b)return;const k=b.dataset.k;e.stopPropagation();
+ switch(b.dataset.act){
+ case 'con':st.concept=k;st.theme=DEF[k];st.style=k==='b'?'sketch':'clean';st.fit=true;st.menu=false;break;
+ case 'sty':st.style=k;st.fit=true;break;
+ case 'scr':st.screen=k;st.menu=false;if(k==='board')st.fit=true;if(k==='empty'){st.s=1;st.tx=0;st.ty=0}break;
+ case 'tool':st.tool=k;break;
+ case 'exec':st.exec=!st.exec;if(st.screen!=='board')st.screen='board';break;
+ case 'ghost':st.ghost=true;st.screen='board';st.sel='M7';st.fit=true;break;
+ case 'accept':S.push(Object.assign({},GHOST,{ghost:0}));E.push(['M3','M7']);st.ghost=false;break;
+ case 'reject':st.ghost=false;st.sel=null;break;
+ case 'tab':st.tab=k;break;
+ case 'close':st.sel=null;break;
+ case 'menu':st.menu=!st.menu;break;
+ case 'flt':st.filter=k;break;
+ case 'f2':st.filter2=k;break;
+ case 'zin':zoomBy(1.2);return;
+ case 'zout':zoomBy(1/1.2);return;
+ case 'fit':fit();return;
+ case 'go':st.sel=k;st.tab='d';if(st.screen!=='board'){st.screen='board';st.fit=true;render();return}render();focus(k);return;
+ case 'tg':{const [id,i,j]=b.dataset.p.split('|'),t=by(id).tasks[+i];if(j!==undefined)t.sub[+j].d=t.sub[+j].d?0:1;else if(t.sub){const v=!tdone(t);t.sub.forEach(s=>s.d=v?1:0)}else t.d=t.d?0:1;break;}
+ }
+ render();});
+window.addEventListener('resize',()=>{if(st.screen==='board')fit()});
+render();
+</script>
+</body>
+</html>
