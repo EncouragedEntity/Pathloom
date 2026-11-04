@@ -13,6 +13,7 @@ import { keyAfter } from './index-key';
 import { CARD_W, MISSING_H, cardLayout, edgeCurve, extractEdges, hitCheckbox, type CardLayout, type DepEdge } from './stage';
 import { clearMeasureCache, measureText } from './measure';
 import { Renderer, type Overlay, type RenderState } from './render';
+import { STATIC_CACHE } from './lod';
 
 type Dir = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
 const DIRS: Dir[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
@@ -74,7 +75,8 @@ class EditorImpl implements Editor {
   private width = 0;
   private height = 0;
   private dpr = 1;
-  private dirtyS = true;
+  private dirtyS: 0 | 1 | 2 | 3 = 3; // 0 clean, 1 camera moved, 2 camera idle (crisp redraw), 3 content changed
+  private idleTimer = 0;
   private dirtyI = true;
   private raf = 0;
   private destroyed = false;
@@ -194,6 +196,7 @@ class EditorImpl implements Editor {
   destroy() {
     this.destroyed = true;
     cancelAnimationFrame(this.raf);
+    window.clearTimeout(this.idleTimer);
     this.cancelEdit();
     this.ro.disconnect();
     window.removeEventListener('keydown', this.onKeyDown);
@@ -464,7 +467,10 @@ class EditorImpl implements Editor {
   private setCamera(c: Camera) {
     this.cam = { ...c, scale: clampScale(c.scale) };
     if (this.cam.scale !== this.lastScale) { this.lastScale = this.cam.scale; this.host.onZoomChange(this.cam.scale); }
-    this.invalidate();
+    if (this.dirtyS < 1) this.dirtyS = 1;
+    window.clearTimeout(this.idleTimer);
+    this.idleTimer = window.setTimeout(() => { if (this.dirtyS < 2) this.dirtyS = 2; this.invalidate(false, false); }, STATIC_CACHE.idleMs);
+    this.invalidate(false, true);
   }
 
   private toWorld(e: { clientX: number; clientY: number }): { s: Point; w: Point } {
@@ -1077,7 +1083,7 @@ class EditorImpl implements Editor {
   }
 
   private invalidate(s = true, i = true) {
-    if (s) this.dirtyS = true;
+    if (s) this.dirtyS = 3;
     if (i) this.dirtyI = true;
     if (!this.raf && !this.destroyed) this.raf = requestAnimationFrame(this.frame);
   }
@@ -1085,7 +1091,7 @@ class EditorImpl implements Editor {
   private state(): RenderState {
     return {
       cam: this.cam, width: this.width, height: this.height, dpr: window.devicePixelRatio || this.dpr, theme: this.theme, style: this.style,
-      scene: this.scene, stages: this.stages, layoutOf: this.layoutOf, edges: this.edges().edges, selected: this.selected,
+      scene: this.scene, stages: this.stages, layoutOf: this.layoutOf, edges: this.edges().edges, cards: this.edges().cards, selected: this.selected,
       selEdge: this.selEdge, editingId: this.editingId, labels: this.labels,
     };
   }
@@ -1109,7 +1115,7 @@ class EditorImpl implements Editor {
     if (this.destroyed) return;
     const t0 = performance.now();
     const st = this.state();
-    if (this.dirtyS) { this.dirtyS = false; this.renderer.drawStatic(this.sCtx, st); }
+    if (this.dirtyS) { const m = this.dirtyS; this.dirtyS = 0; this.renderer.drawStatic(this.sCtx, st, m === 3 ? 'content' : m === 2 ? 'idle' : 'camera'); }
     if (this.dirtyI) { this.dirtyI = false; this.renderer.drawInteractive(this.iCtx, st, this.overlay()); }
     if (this.edit) this.placeTa();
     this.stats.frames++;

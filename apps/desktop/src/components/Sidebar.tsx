@@ -2,11 +2,11 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   IconSearch, IconMap, IconPlus, IconCircleCheck, IconProgress, IconPlayerPlay, IconLock,
-  IconDiamond, IconFlag, IconLanguage, IconPalette, IconArrowLeft,
+  IconDiamond, IconFlag,
 } from '@tabler/icons-react';
 import type { CardElement, StageStatus } from '@pathloom/canvas';
 import { editorRef, useApp } from '../store';
-import { setLanguage } from '../i18n';
+import { ProjectMenu } from './ProjectMenu';
 
 type Filter = 'all' | 'active' | 'done';
 
@@ -29,8 +29,8 @@ export function focusStage(key: string): void {
 }
 
 export function Sidebar() {
-  const { t, i18n } = useTranslation();
-  const { project, boards, activeBoard, board, stages, selectedStage, theme, openBoard, createBoard, closeProject, set } = useApp();
+  const { t } = useTranslation();
+  const { boards, activeBoard, board, stages, selectedStage, openBoard, createBoard } = useApp();
   const [filter, setFilter] = useState<Filter>('all');
   const [query, setQuery] = useState('');
   const [naming, setNaming] = useState(false);
@@ -38,7 +38,7 @@ export function Sidebar() {
 
   const onBoard = useMemo(() => {
     const keys = new Set(board?.elements.filter((e): e is CardElement => e.type === 'card').map((e) => e.ref));
-    return stages.filter((s) => keys.has(s.key));
+    return stages.filter((s) => keys.has(s.key)).sort((a, b) => a.key.localeCompare(b.key, undefined, { numeric: true }));
   }, [board, stages]);
 
   const q = query.trim().toLowerCase();
@@ -59,11 +59,7 @@ export function Sidebar() {
   return (
     <aside className="sb">
       <div className="sb-top">
-        <div className="logo">
-          <button className="icon-btn" aria-label="back" onClick={() => void closeProject()}><IconArrowLeft size={16} /></button>
-          <span className="mk">◆</span>
-          <span className="pname" title={project?.root}>{project?.name}</span>
-        </div>
+        <ProjectMenu />
         <label className="search">
           <IconSearch size={15} />
           <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('sidebar.search')} />
@@ -112,14 +108,6 @@ export function Sidebar() {
         ))}
       </div>
 
-      <div className="sb-foot">
-        <button className="icon-btn" title={t('sidebar.language')} onClick={() => setLanguage(i18n.language === 'uk' ? 'en' : 'uk')}>
-          <IconLanguage size={16} /> {i18n.language === 'uk' ? 'UK' : 'EN'}
-        </button>
-        <button className="icon-btn" title={t('sidebar.theme')} onClick={() => set({ theme: theme === 'graphite' ? 'paper' : 'graphite' })}>
-          <IconPalette size={16} /> {theme === 'graphite' ? 'Graphite' : 'Paper'}
-        </button>
-      </div>
     </aside>
   );
 }

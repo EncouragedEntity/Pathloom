@@ -134,7 +134,7 @@ const actions: [string, string, () => void][] = [
   ['style', 'Style: clean', () => { style = style === 'clean' ? 'sketch' : 'clean'; editor.setStyle(style); setLabel('style', `Style: ${style}`); }],
   ['theme', 'Theme: Midnight', () => { applyTheme(theme === midnight ? paper : midnight); setLabel('theme', theme === midnight ? 'Theme: Midnight' : 'Theme: Paper'); }],
   ['convert', 'To stage', () => { void editor.convertSelectionToStage(); }],
-  ['stress', 'Stress +2000', () => stress()],
+  ['stress', 'Shapes 2000', () => stress()], ['cards', 'Cards 200', () => loadPreset('cards')], ['both', 'Both', () => loadPreset('both')], ['bench', 'Bench', () => { void runBench('both', style); }],
   ['pan', 'Pan test', () => panTest()],
 ];
 bar.innerHTML = tools.map(([k, l, s]) => `<button data-tool="${k}" title="${l}">${l}<kbd>${s}</kbd></button>`).join('') + '<span class="sep"></span>' +
@@ -148,19 +148,117 @@ bar.addEventListener('click', (e) => {
 function setLabel(k: string, text: string) { const b = bar.querySelector(`button[data-act="${k}"]`); if (b) b.textContent = text; }
 host.onToolChange('select');
 
-function stress() {
-  const board = editor.getBoard();
-  const kinds = ['rect', 'ellipse', 'diamond'] as const;
-  const out: Element[] = [...board.elements];
+// ---- stress presets ------------------------------------------------------------------------
+function rng(seed0: number) {
+  let a = seed0 >>> 0;
+  return () => { a = (a + 0x6d2b79f5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+const FILLS = ['#9b87f5', '#4cc38a', '#e8b04a'];
+const WORDS = ['Idea', 'Agents', 'Ship it', 'Plan', 'Review', 'Notes', 'Spike', 'Risk', 'Demo', 'Backlog'];
+
+/** 2000 mixed shapes / stickies / arrows / lines / freedraw / text, deterministic. */
+function shapePreset(): Element[] {
+  const r = rng(42), out: Element[] = [];
+  const X = () => r() * 6000 - 500, Y = () => r() * 4000 - 500;
   for (let i = 0; i < 2000; i++) {
-    const k = kinds[i % 3];
-    out.push({ id: 'st' + i + '_' + Math.random().toString(36).slice(2, 6), type: k, x: Math.random() * 6000 - 500, y: Math.random() * 4000 - 500,
-      w: 30 + Math.random() * 120, h: 30 + Math.random() * 90, index: next(), seed: i + 1, roughness: 1, strokeWidth: 1.5, angle: 0,
-      fill: i % 4 === 0 ? ['#9b87f5', '#4cc38a', '#e8b04a'][i % 3] + '55' : null, stroke: undefined } as unknown as Element);
+    const id = 'st' + i, k = r(), x = X(), y = Y();
+    const common = { id, x, y, index: next(), seed: i + 1, roughness: 1, strokeWidth: 1.5, angle: i % 17 === 0 ? r() * 0.6 : 0 };
+    if (k < 0.45) {
+      const type = (['rect', 'ellipse', 'diamond'] as const)[i % 3];
+      out.push({ ...common, type, w: 30 + r() * 120, h: 30 + r() * 90, fill: r() < 0.25 ? FILLS[i % 3] + '55' : null, text: r() < 0.2 ? WORDS[i % WORDS.length] : undefined } as unknown as Element);
+    } else if (k < 0.5) {
+      out.push({ ...common, type: 'sticky', w: 110, h: 90, text: WORDS[i % WORDS.length] } as unknown as Element);
+    } else if (k < 0.72) {
+      const n = 2 + Math.floor(r() * 3), pts: [number, number][] = [[0, 0]];
+      for (let j = 1; j < n; j++) pts.push([pts[j - 1][0] + (r() - 0.3) * 160, pts[j - 1][1] + (r() - 0.5) * 120]);
+      const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
+      out.push({ ...common, type: i % 3 ? 'arrow' : 'line', w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys), points: pts, endHead: i % 3 ? 'arrow' : 'none', strokeStyle: i % 7 === 0 ? 'dashed' : 'solid' } as unknown as Element);
+    } else if (k < 0.9) {
+      const n = 20 + Math.floor(r() * 40), pts: [number, number, number][] = [[0, 0, 0.5]];
+      let a = r() * 6.28;
+      for (let j = 1; j < n; j++) { a += (r() - 0.5) * 0.9; pts.push([pts[j - 1][0] + Math.cos(a) * 4, pts[j - 1][1] + Math.sin(a) * 4, 0.5]); }
+      const xs = pts.map((q) => q[0]), ys = pts.map((q) => q[1]);
+      out.push({ ...common, type: 'freedraw', w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys), points: pts } as unknown as Element);
+    } else {
+      out.push({ ...common, type: 'text', w: 120, h: 28, text: WORDS[i % WORDS.length] + ' ' + (i % 50), fontSize: 14 + (i % 5) * 4 } as unknown as Element);
+    }
   }
-  editor.setBoard({ ...board, elements: out });
-  note = `stress: ${out.length} elements`;
+  return out;
+}
+
+const TASKS = ['Write the parser', 'Review the API surface', 'Benchmark the hot path', 'Update docs and examples', 'Handle the empty state', 'Migrate the old files', 'Add keyboard shortcuts', 'Fix flaky CI job'];
+/** Replaces the mock stage store with 200 stages (3-8 tasks each), deps to left/upper neighbours; returns the card elements. */
+function cardPreset(): Element[] {
+  const r = rng(7), cols = 20, N = 200, out: Element[] = [];
+  raw.length = 0;
+  for (let i = 0; i < N; i++) {
+    const key = 'C' + i, nt = 3 + Math.floor(r() * 6);
+    const depends: { id: string; soft: boolean }[] = [];
+    if (i % cols) depends.push({ id: 'C' + (i - 1), soft: false });
+    if (i >= cols && r() < 0.6) depends.push({ id: 'C' + (i - cols), soft: r() < 0.3 });
+    raw.push({ key, title: `Stage ${i}: ${TASKS[i % TASKS.length]} and ${TASKS[(i * 3) % TASKS.length].toLowerCase()}`, who: (['me', 'ai', 'both'] as const)[i % 3],
+      due: i % 4 === 0 ? 'Dec ' + (1 + (i % 28)) : null, priority: i % 5 === 0 ? 'high' : 'med', branch: i % 6 === 0 ? 'feat/stage-' + i : null, depends,
+      tasks: Array.from({ length: nt }, (_, j) => t(`${key}-${j + 1}`, TASKS[(i + j) % TASKS.length], r() < 0.35)) });
+  }
+  for (let i = 0; i < N; i++) out.push({ id: 'cc' + i, type: 'card', ref: 'C' + i, x: (i % cols) * 320, y: Math.floor(i / cols) * 460, w: 250, h: 200, index: next() } as Element);
+  return out;
+}
+
+function loadPreset(kind: 'shapes' | 'cards' | 'both') {
+  const els: Element[] = [];
+  if (kind !== 'shapes') { els.push(...cardPreset()); editor.setStages(views()); }
+  if (kind !== 'cards') els.push(...shapePreset());
+  editor.setBoard({ format: 'pathloom.board/1', title: 'Stress ' + kind, style, elements: els });
+  note = `preset ${kind}: ${els.length} elements`;
   refreshInfo();
+}
+const stress = () => loadPreset('shapes');
+
+// ---- headless benchmark: ?bench=shapes|cards|both&style=clean|sketch&theme=midnight|paper -------
+// Also callable repeatedly in one page: await window.__runBench('both', 'sketch'). Result in window.__bench.
+interface BenchResult { kind: string; style: string; zoom: number; frames: number; median: number; p95: number; max: number; renderMedian: number; renderP95: number; renderMax: number; renderFrames: number }
+const pct = (a: number[], p: number) => { if (!a.length) return 0; const s = [...a].sort((x, y) => x - y); return s[Math.min(s.length - 1, Math.floor(s.length * p))]; };
+async function runBench(kind: 'shapes' | 'cards' | 'both', st: 'clean' | 'sketch'): Promise<BenchResult> {
+  style = st; editor.setStyle(st); setLabel('style', `Style: ${st}`);
+  loadPreset(kind);
+  await document.fonts?.ready;
+  editor.zoomToFit();
+  await new Promise((res) => setTimeout(res, 600));
+  const z0 = editor.getZoom(), frames: number[] = [], render: number[] = [];
+  let prev = performance.now(), prevS = editor.getStats();
+  const t0 = prev;
+  await new Promise<void>((done) => {
+    const tick = (now: number) => {
+      const s = editor.getStats(), dF = s.frames - prevS.frames;
+      frames.push(now - prev);
+      if (dF > 0) render.push((s.totalFrameMs - prevS.totalFrameMs) / dF);
+      prev = now; prevS = s;
+      const e = now - t0;
+      if (e >= 3000) return done();
+      // 0-1s pan, 1-2s zoom in (x3 about the centre), 2-3s zoom back out
+      if (e < 1000) { const d = Math.floor(e / 250) % 2 ? -1 : 1; editor.panBy(9 * d, 4 * d); }
+      else { const ph = e < 2000 ? (e - 1000) / 1000 : 1 - (e - 2000) / 1000; editor.zoomTo(z0 * Math.pow(3, ph)); }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  });
+  frames.shift();
+  const res: BenchResult = { kind, style: st, zoom: z0, frames: frames.length, median: pct(frames, 0.5), p95: pct(frames, 0.95), max: Math.max(...frames),
+    renderMedian: pct(render, 0.5), renderP95: pct(render, 0.95), renderMax: Math.max(...render, 0), renderFrames: render.length };
+  (window as unknown as { __bench: BenchResult }).__bench = res;
+  note = `bench ${kind}/${st}: render med ${res.renderMedian.toFixed(2)} p95 ${res.renderP95.toFixed(2)} ms`;
+  refreshInfo();
+  return res;
+}
+(window as unknown as { __runBench: typeof runBench }).__runBench = runBench;
+{
+  const q = new URLSearchParams(location.search), bk = q.get('bench'), pk = q.get('preset');
+  if (q.get('theme') === 'paper') { applyTheme(paper); setLabel('theme', 'Theme: Paper'); }
+  if (bk === 'shapes' || bk === 'cards' || bk === 'both') void runBench(bk, q.get('style') === 'sketch' ? 'sketch' : 'clean');
+  else if (pk === 'shapes' || pk === 'cards' || pk === 'both') {
+    style = q.get('style') === 'sketch' ? 'sketch' : 'clean'; editor.setStyle(style); setLabel('style', `Style: ${style}`);
+    loadPreset(pk);
+  }
 }
 
 // FPS: editor frames drawn per second while the scene is changing

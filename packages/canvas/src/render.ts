@@ -4,6 +4,7 @@ import type { Drawable, Options } from 'roughjs/bin/core';
 import getStroke from 'perfect-freehand';
 import type { CardElement, Element, FreedrawElement, LinearElement, ShapeElement, StageView, TextElement, ThemeTokens } from './types';
 import type { Camera } from './camera';
+import { type StaticMode, cacheCovers, cacheBlit, cacheMargin, lodSketch, lodDot, lodTextPx, TEXT_MIN_PX } from './lod';
 import { visibleBounds, worldToScreen } from './camera';
 import { absPoints, elementCenter, type Bounds, type Point } from './geometry';
 import type { Scene } from './scene';
@@ -22,6 +23,7 @@ export interface RenderState {
   stages: Map<string, StageView>;
   layoutOf: (s: StageView) => CardLayout;
   edges: DepEdge[];
+  cards: Map<string, CardElement>;
   selected: ReadonlySet<string>;
   selEdge: { from: string; to: string } | null;
   editingId: string | null;
@@ -38,6 +40,29 @@ export interface Overlay {
   draftLine: { pts: Point[]; head: boolean } | null;
   draftPencil: [number, number, number][] | null;
   bindTarget: Element | null;
+}
+
+/** A roughjs drawable flattened to Path2D parts, so redraws skip op-by-op replay. */
+interface RoughPart { p: Path2D; fill: boolean; color: string; w: number; dash: number[]; evenodd: boolean }
+
+function compileRough(ds: Drawable[]): RoughPart[] {
+  const out: RoughPart[] = [];
+  for (const d of ds) {
+    const o = d.options;
+    for (const set of d.sets) {
+      if (set.type === 'fillSketch') continue; // only solid fills are generated
+      const p = new Path2D();
+      for (const it of set.ops) {
+        if (it.op === 'move') p.moveTo(it.data[0], it.data[1]);
+        else if (it.op === 'bcurveTo') p.bezierCurveTo(it.data[0], it.data[1], it.data[2], it.data[3], it.data[4], it.data[5]);
+        else p.lineTo(it.data[0], it.data[1]);
+      }
+      const fill = set.type === 'fillPath';
+      out.push({ p, fill, color: fill ? o.fill ?? '' : o.stroke === 'none' ? 'transparent' : o.stroke, w: o.strokeWidth, dash: o.strokeLineDash ?? [],
+        evenodd: d.shape === 'curve' || d.shape === 'polygon' || d.shape === 'path' });
+    }
+  }
+  return out;
 }
 
 const fontOf = (size: number, family: string, weight = 400) => `${weight} ${size}px ${family}`;
@@ -65,21 +90,58 @@ export function freehandPath(pts: [number, number, number][], size: number): Pat
 
 export class Renderer {
   private rc: RoughCanvas | null = null;
-  private roughCache = new Map<string, { ver: number; d: Drawable[] }>();
+  private roughCache = new Map<string, { ver: number; d: RoughPart[] }>();
+  private farTitles = new WeakMap<StageView, { font: string; lines: string[] }>();
+  private cache: { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D; cam: Camera; mx: number; my: number; w: number; h: number; dpr: number; valid: boolean } | null = null;
   private pathCache = new Map<string, { ver: number; p: Path2D }>();
   private wrapCache = new Map<string, string[]>();
 
   constructor(private staticCanvas: HTMLCanvasElement) {}
 
-  clearCaches() { this.roughCache.clear(); this.pathCache.clear(); this.wrapCache.clear(); }
+  clearCaches() { this.roughCache.clear(); this.pathCache.clear(); this.wrapCache.clear(); this.farTitles = new WeakMap(); this.invalidateStatic(); }
+
+  invalidateStatic() { if (this.cache) this.cache.valid = false; }
 
   // ---- static layer ------------------------------------------------------------------------
 
-  drawStatic(ctx: CanvasRenderingContext2D, s: RenderState) {
+  /**
+   * mode 'content': scene/theme/size changed -> draw directly, drop the bitmap cache.
+   * mode 'camera': pan/zoom only -> blit the cached bitmap (re-render it when it no longer covers the view or is too scaled).
+   * mode 'idle': camera settled -> re-render the cache crisp at the exact camera.
+   */
+  drawStatic(ctx: CanvasRenderingContext2D, s: RenderState, mode: StaticMode = 'content') {
+    if (mode === 'content') { this.invalidateStatic(); this.drawDirect(ctx, s); return; }
+    let c = this.cache;
+    const fits = !!c && c.valid && c.w === s.width && c.h === s.height && c.dpr === s.dpr &&
+      (mode === 'camera' ? cacheCovers(c.cam, s.cam, s.width, s.height, c.mx, c.my) : c.cam.scale === s.cam.scale && c.cam.x === s.cam.x && c.cam.y === s.cam.y);
+    if (!fits) c = this.renderCache(s);
+    if (!c) { this.drawDirect(ctx, s); return; }
+    const m = cacheBlit(c.cam, s.cam, c.mx, c.my, s.dpr);
+    ctx.setTransform(m.a, 0, 0, m.a, m.e, m.f);
+    ctx.drawImage(c.canvas, 0, 0);
+  }
+
+  private renderCache(s: RenderState) {
+    const { mx, my } = cacheMargin(s.width, s.height, s.dpr);
+    const W = s.width + mx * 2, H = s.height + my * 2;
+    let c = this.cache;
+    if (!c) {
+      const canvas = document.createElement('canvas');
+      c = this.cache = { canvas, ctx: canvas.getContext('2d')!, cam: s.cam, mx, my, w: 0, h: 0, dpr: 1, valid: false };
+    }
+    c.valid = false;
+    const pw = Math.round(W * s.dpr), ph = Math.round(H * s.dpr);
+    if (c.canvas.width !== pw || c.canvas.height !== ph) { c.canvas.width = pw; c.canvas.height = ph; }
+    this.drawDirect(c.ctx, { ...s, width: W, height: H, cam: { scale: s.cam.scale, x: s.cam.x + mx, y: s.cam.y + my } });
+    Object.assign(c, { cam: s.cam, mx, my, w: s.width, h: s.height, dpr: s.dpr, valid: true });
+    return c;
+  }
+
+  private drawDirect(ctx: CanvasRenderingContext2D, s: RenderState) {
     const { cam, dpr, theme } = s;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = theme.bg;
-    ctx.fillRect(0, 0, s.width * dpr, s.height * dpr);
+    ctx.fillRect(0, 0, Math.round(s.width * dpr), Math.round(s.height * dpr));
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.drawGrid(ctx, s);
     ctx.setTransform(dpr * cam.scale, 0, 0, dpr * cam.scale, dpr * cam.x, dpr * cam.y);
@@ -107,8 +169,7 @@ export class Renderer {
   private drawEdges(ctx: CanvasRenderingContext2D, s: RenderState, view: Bounds) {
     if (!s.edges.length) return;
     const t = s.theme;
-    const cardEl = new Map<string, Element>();
-    for (const e of s.scene.all()) if (e.type === 'card') cardEl.set((e as CardElement).ref, e);
+    const cardEl = s.cards;
     for (const ed of s.edges) {
       const a = cardEl.get(ed.from), b = cardEl.get(ed.to);
       if (!a || !b) continue;
@@ -137,6 +198,13 @@ export class Renderer {
   // ---- elements ----------------------------------------------------------------------------
 
   private drawElement(ctx: CanvasRenderingContext2D, el: Element, s: RenderState) {
+    if (lodDot(el, s.cam.scale)) {
+      // sub-2px element: one filled rect instead of the real geometry
+      const k = Math.max(1 / s.cam.scale, 0);
+      ctx.fillStyle = (el.type === 'text' ? el.stroke ?? s.theme.text : el.stroke ?? s.theme.text2);
+      ctx.fillRect(el.x, el.y, Math.max(el.w, k), Math.max(el.h, k));
+      return;
+    }
     ctx.save();
     if (el.opacity !== undefined) ctx.globalAlpha = el.opacity;
     switch (el.type) {
@@ -175,13 +243,24 @@ export class Renderer {
     return this.rc;
   }
 
-  private cachedRough(el: Element, s: RenderState, make: (g: RoughCanvas['gen']) => Drawable[]): Drawable[] {
+  private cachedRough(el: Element, s: RenderState, make: (g: RoughCanvas['gen']) => Drawable[]): RoughPart[] {
     const ver = s.scene.version(el.id);
     const hit = this.roughCache.get(el.id);
     if (hit && hit.ver === ver) return hit.d;
-    const d = make(this.rough().generator);
+    const d = compileRough(make(this.rough().generator));
     this.roughCache.set(el.id, { ver, d });
     return d;
+  }
+
+  private drawParts(ctx: CanvasRenderingContext2D, parts: RoughPart[]) {
+    let dashed = false;
+    for (const q of parts) {
+      if (q.fill) { ctx.fillStyle = q.color; ctx.fill(q.p, q.evenodd ? 'evenodd' : 'nonzero'); continue; }
+      ctx.strokeStyle = q.color; ctx.lineWidth = q.w;
+      if (q.dash.length || dashed) { ctx.setLineDash(q.dash); dashed = q.dash.length > 0; }
+      ctx.stroke(q.p);
+    }
+    if (dashed) ctx.setLineDash([]);
   }
 
   private shapeFill(el: ShapeElement, t: ThemeTokens): string | null {
@@ -195,14 +274,14 @@ export class Renderer {
     this.rotateTo(ctx, el);
     ctx.translate(el.x, el.y);
     const fill = this.shapeFill(el, t);
-    if (s.style === 'sketch') {
+    if (s.style === 'sketch' && lodSketch(s.cam.scale)) {
       const d = this.cachedRough(el, s, (g) => {
         const o = this.roughOpts(el, s, fill);
         if (el.type === 'ellipse') return [g.ellipse(el.w / 2, el.h / 2, el.w, el.h, o)];
         if (el.type === 'diamond') return [g.polygon([[el.w / 2, 0], [el.w, el.h / 2], [el.w / 2, el.h], [0, el.h / 2]], o)];
         return [g.rectangle(0, 0, el.w, el.h, o)];
       });
-      for (const dr of d) this.rough().draw(dr);
+      this.drawParts(ctx, d);
     } else {
       ctx.beginPath();
       if (el.type === 'ellipse') ctx.ellipse(el.w / 2, el.h / 2, Math.abs(el.w / 2), Math.abs(el.h / 2), 0, 0, Math.PI * 2);
@@ -216,11 +295,28 @@ export class Renderer {
     }
     if (el.text && s.editingId !== el.id) {
       ctx.setLineDash([]);
-      this.drawLabel(ctx, el.text, el.w / 2, el.h / 2, el.fontSize ?? 18, s, 'center', true);
+      this.drawLabel(ctx, el.text, el.w / 2, el.h / 2, el.fontSize ?? 18, s, 'center', true, el.w * 0.8);
     }
   }
 
-  private drawLabel(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, size: number, s: RenderState, align: CanvasTextAlign, middle: boolean) {
+  /** Text too small to read: one thin translucent bar per line, no font work. */
+  private textBars(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, size: number, align: CanvasTextAlign, maxW: number, color: string, scale: number) {
+    const lh = size * 1.25, bh = Math.max(size * 0.3, 1 / scale);
+    ctx.globalAlpha *= 0.45; ctx.fillStyle = color;
+    let ty = y;
+    for (const ln of text.split('\n')) {
+      const bw = Math.min(maxW, ln.length * size * 0.5);
+      ctx.fillRect(align === 'center' ? x - bw / 2 : align === 'right' ? x - bw : x, ty + (lh - bh) / 2, bw, bh);
+      ty += lh;
+    }
+  }
+
+  private drawLabel(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, size: number, s: RenderState, align: CanvasTextAlign, middle: boolean, maxW = Infinity) {
+    if (lodTextPx(size, s.cam.scale)) {
+      const n = text.split('\n').length;
+      this.textBars(ctx, text, x, middle ? y - (n * size * 1.25) / 2 : y, size, align, maxW, s.theme.text, s.cam.scale);
+      return;
+    }
     ctx.fillStyle = s.theme.text;
     ctx.font = fontOf(size, textFamily(s.theme, s.style));
     ctx.textAlign = align;
@@ -233,12 +329,13 @@ export class Renderer {
   private drawText(ctx: CanvasRenderingContext2D, el: TextElement, s: RenderState) {
     if (s.editingId === el.id) return;
     this.rotateTo(ctx, el);
+    const align = el.align ?? 'left';
+    const x = align === 'left' ? el.x : align === 'center' ? el.x + el.w / 2 : el.x + el.w;
+    if (lodTextPx(el.fontSize, s.cam.scale)) { this.textBars(ctx, el.text, x, el.y, el.fontSize, align, el.w, el.stroke ?? s.theme.text, s.cam.scale); return; }
     ctx.fillStyle = el.stroke ?? s.theme.text;
     ctx.font = fontOf(el.fontSize, textFamily(s.theme, s.style));
     ctx.textBaseline = 'top';
-    const align = el.align ?? 'left';
     ctx.textAlign = align;
-    const x = align === 'left' ? el.x : align === 'center' ? el.x + el.w / 2 : el.x + el.w;
     let y = el.y;
     for (const ln of el.text.split('\n')) { ctx.fillText(ln, x, y); y += el.fontSize * 1.25; }
   }
@@ -261,13 +358,13 @@ export class Renderer {
     const heads: Point[][] = [];
     if (endHead) { const [a, b] = this.headLines(pts[pts.length - 1], pts[pts.length - 2], size); heads.push([a, pts[pts.length - 1], b]); }
     if (startHead) { const [a, b] = this.headLines(pts[0], pts[1], size); heads.push([a, pts[0], b]); }
-    if (s.style === 'sketch') {
+    if (s.style === 'sketch' && lodSketch(s.cam.scale)) {
       const d = this.cachedRough(el, s, (g) => {
         const o = this.roughOpts(el, s, null);
         const solid = { ...o, strokeLineDash: undefined };
         return [g.linearPath(pts, o), ...heads.map((h) => g.linearPath(h, solid))];
       });
-      for (const dr of d) this.rough().draw(dr);
+      this.drawParts(ctx, d);
       return;
     }
     ctx.strokeStyle = el.stroke ?? s.theme.text2;
@@ -301,7 +398,7 @@ export class Renderer {
     ctx.strokeStyle = t.border2; ctx.lineWidth = 1; ctx.setLineDash([6, 5]); ctx.stroke();
     ctx.setLineDash([]);
     const name = (el as { name?: string }).name;
-    if (name) {
+    if (name && 12 * s.cam.scale >= TEXT_MIN_PX) {
       ctx.font = fontOf(12, t.fontUi, 500); ctx.fillStyle = t.text2;
       ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
       ctx.fillText(name, el.x + 6, el.y - 10);
@@ -329,6 +426,39 @@ export class Renderer {
     return v;
   }
 
+  private farTitle(stage: StageView, font: string): string[] {
+    const hit = this.farTitles.get(stage);
+    if (hit && hit.font === font) return hit.lines;
+    const lines = this.wrapped(stage.title, font, CARD_W - CARD.padX * 2, 3);
+    this.farTitles.set(stage, { font, lines });
+    return lines;
+  }
+
+  /** Card at scale < 0.35: no header/task/footer text is measured or drawn; title text only if >= 4px, else bars. */
+  private drawCardTiny(ctx: CanvasRenderingContext2D, stage: StageView, L: CardLayout, H: number, s: RenderState) {
+    const t = s.theme, px = CARD.padX, W = CARD_W, cy = CARD.padTop + CARD.headH / 2;
+    const fg = stage.status === 'done' ? t.ok : stage.status === 'active' ? t.warn : stage.status === 'ready' ? t.accent : t.muted;
+    ctx.fillStyle = fg; ctx.globalAlpha *= 0.5;
+    ctx.fillRect(W - px - 74, cy - 10, 74, 20);
+    ctx.fillRect(px, cy - 5, 36, 10);
+    ctx.globalAlpha = 1;
+    const tsize = s.style === 'sketch' ? 30 : 24, lh = tsize * 1.2;
+    if (tsize * s.cam.scale >= TEXT_MIN_PX) {
+      const tfont = fontOf(tsize, textFamily(t, s.style), 600);
+      ctx.font = tfont; ctx.fillStyle = t.text; ctx.textBaseline = 'top'; ctx.textAlign = 'left';
+      this.farTitle(stage, tfont).forEach((ln, i) => ctx.fillText(ln, px, L.titleY + i * lh + (lh - tsize) / 2 - 1));
+    } else {
+      ctx.fillStyle = t.text; ctx.globalAlpha = 0.45;
+      const n = Math.min(3, Math.max(1, L.titleLines.length));
+      for (let i = 0; i < n; i++) ctx.fillRect(px, L.titleY + i * lh + lh * 0.3, i === n - 1 && n > 1 ? (W - px * 2) * 0.6 : W - px * 2, lh * 0.4);
+      ctx.globalAlpha = 1;
+    }
+    const [d, n] = stage.progress;
+    const y = H - CARD.padBottom - CARD.progH + CARD.progH / 2 - 2;
+    ctx.fillStyle = t.border; ctx.fillRect(px, y, W - px * 2, 4);
+    if (n > 0 && d > 0) { ctx.fillStyle = t.ok; ctx.fillRect(px, y, Math.max(4, ((W - px * 2) * d) / n), 4); }
+  }
+
   private drawCard(ctx: CanvasRenderingContext2D, el: CardElement, s: RenderState) {
     const t = s.theme, stage = s.stages.get(el.ref);
     ctx.translate(el.x, el.y);
@@ -351,6 +481,7 @@ export class Renderer {
     }
     const L = s.layoutOf(stage), far = s.cam.scale < 0.55;
     const px = CARD.padX, cy = CARD.padTop + CARD.headH / 2;
+    if (s.cam.scale < 0.35) { this.drawCardTiny(ctx, stage, L, H, s); return; }
     // header: key, who chip, status pill
     ctx.font = fontOf(11, t.fontMono); ctx.fillStyle = t.muted;
     ctx.fillText(stage.key, px, cy);
@@ -365,7 +496,7 @@ export class Renderer {
     // title
     const tsize = far ? (s.style === 'sketch' ? 30 : 24) : s.style === 'sketch' ? 22 : 15;
     const tfont = fontOf(tsize, textFamily(t, s.style), 600);
-    const lines = far ? this.wrapped(stage.title, tfont, W - px * 2, 3) : L.titleLines;
+    const lines = far ? this.farTitle(stage, tfont) : L.titleLines;
     const lh = far ? tsize * 1.2 : L.titleLH;
     ctx.font = tfont; ctx.fillStyle = t.text; ctx.textBaseline = 'top';
     lines.forEach((ln, i) => ctx.fillText(ln, px, L.titleY + i * lh + (lh - tsize) / 2 - 1));

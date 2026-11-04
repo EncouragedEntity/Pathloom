@@ -132,7 +132,7 @@ pub struct Board {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "snake_case")]
 pub struct ProjectConfig {
     pub format: u32,
     pub name: String,
