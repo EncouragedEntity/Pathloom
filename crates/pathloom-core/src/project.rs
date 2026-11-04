@@ -231,6 +231,67 @@ impl Project {
         })
     }
 
+    /// Applies a partial frontmatter update; see [`StageMeta`].
+    pub fn update_meta(&self, key: &str, meta: StageMeta) -> Result<Stage> {
+        if meta.title.as_ref().is_some_and(|t| t.trim().is_empty()) {
+            return Err(Error::InvalidName("stage title must not be empty".into()));
+        }
+        let opt = |v: String| {
+            let v = v.trim().to_string();
+            (!v.is_empty()).then_some(v)
+        };
+        self.edit_stage(key, |s| {
+            if let Some(t) = meta.title {
+                s.title = t.trim().into();
+            }
+            if let Some(k) = meta.kind {
+                s.kind = k;
+            }
+            if let Some(w) = meta.who {
+                s.who = w;
+            }
+            if let Some(p) = meta.priority {
+                s.priority = p;
+            }
+            if let Some(d) = meta.due {
+                s.due = opt(d);
+            }
+            if let Some(b) = meta.branch {
+                s.branch = opt(b);
+            }
+            Ok(())
+        })
+    }
+
+    /// Raw text of a stage file, for the "File" tab.
+    pub fn stage_source(&self, key: &str) -> Result<String> {
+        check_key(key)?;
+        let path = self.stage_path(key);
+        if !path.is_file() {
+            return Err(Error::NotFound(format!("stage {key}")));
+        }
+        read_text(&path)
+    }
+
+    /// Adds a subtask under a top-level task: `M0-02` gets `M0-02a`, `M0-02b`, …
+    pub fn add_subtask(&self, task_id: &str, title: &str) -> Result<Stage> {
+        let key = task_id.split('-').next().unwrap_or("").to_string();
+        self.edit_stage(&key, |s| {
+            let task = s
+                .tasks
+                .iter_mut()
+                .find(|t| t.id == task_id)
+                .ok_or_else(|| Error::NotFound(format!("task {task_id}")))?;
+            let used: Vec<char> = task.sub.iter().filter_map(|x| x.id.strip_prefix(task_id)?.chars().next()).collect();
+            let letter = ('a'..='z')
+                .find(|c| !used.contains(c))
+                .ok_or_else(|| Error::InvalidName(format!("task {task_id} already has 26 subtasks")))?;
+            task.sub.push(Task { id: format!("{task_id}{letter}"), title: title.trim().into(), done: false, sub: vec![] });
+            task.done = false;
+            Ok(())
+        })
+    }
+
     /// Edit a task or subtask located by its id (`M0-02` or `M0-02a`).
     fn edit_task(&self, task_id: &str, f: impl FnOnce(&mut Vec<Task>, usize, Option<usize>)) -> Result<Stage> {
         let key = task_id.split('-').next().unwrap_or("");

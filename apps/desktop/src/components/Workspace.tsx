@@ -1,23 +1,38 @@
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { IconX, IconMap, IconPlayerPlay, IconLock } from '@tabler/icons-react';
+import { IconX, IconMap, IconPlayerPlay, IconLock, IconLayoutBoard, IconListDetails, IconFocus2 } from '@tabler/icons-react';
 import { useApp } from '../store';
 import { Sidebar } from './Sidebar';
 import { CanvasView } from './CanvasView';
 import { Inspector } from './Inspector';
+import { ListView } from './ListView';
+import { SettingsDialog } from './SettingsDialog';
+import { effectiveKeymap, label, useAppShortcuts, useKeys } from '../keys';
+import { openProject } from '../projectActions';
+import { errorText } from '../api';
 
 function TabsBar() {
-  const { openBoards, activeBoard, openBoard, closeBoard } = useApp();
+  const { t } = useTranslation();
+  const { openBoards, activeBoard, openBoard, closeBoard, exec, set } = useApp();
+  const keys = effectiveKeymap(useKeys((s) => s.overrides));
   return (
-    <div className="tabs" role="tablist">
-      {openBoards.map((b) => (
-        <div key={b} role="tab" aria-selected={b === activeBoard} className={`tab ${b === activeBoard ? 'on' : ''}`} onClick={() => void openBoard(b)}>
-          <IconMap size={15} />
-          {b}
-          <button className="tab-x" aria-label="close" onClick={(e) => { e.stopPropagation(); void closeBoard(b); }}>
-            <IconX size={12} />
-          </button>
-        </div>
-      ))}
+    <div className="tabs">
+      <div className="tab-list" role="tablist">
+        {openBoards.map((b) => (
+          <div key={b} role="tab" aria-selected={b === activeBoard} className={`tab ${b === activeBoard ? 'on' : ''}`} onClick={() => void openBoard(b)}>
+            <IconMap size={15} />
+            {b}
+            <button className="tab-x" aria-label="close" onClick={(e) => { e.stopPropagation(); void closeBoard(b); }}>
+              <IconX size={12} />
+            </button>
+          </div>
+        ))}
+      </div>
+      <div className="tab-actions">
+        <button className={`btn sm ${exec ? 'on' : ''}`} aria-pressed={exec} title={`${t('exec.hint')} (${label('app.focus', keys)})`} onClick={() => set({ exec: !exec, view: 'board' })}>
+          <IconFocus2 size={14} />{t('exec.on')}
+        </button>
+      </div>
     </div>
   );
 }
@@ -42,7 +57,17 @@ function StatusBar() {
 }
 
 export function Workspace() {
-  const { project, activeBoard, selectedStage, error, set } = useApp();
+  const { t } = useTranslation();
+  const { project, activeBoard, selectedStage, error, view, set } = useApp();
+
+  const handlers = useMemo(() => ({
+    'app.focus': () => { const s = useApp.getState(); s.set({ exec: !s.exec, view: 'board' }); },
+    'app.toggleView': () => { const s = useApp.getState(); s.set({ view: s.view === 'board' ? 'list' : 'board' }); },
+    'app.openFolder': () => { openProject().catch((e) => useApp.getState().set({ error: errorText(e) })); },
+    'app.settings': () => useApp.getState().set({ settingsTab: 'general' }),
+  }), []);
+  useAppShortcuts(handlers);
+
   return (
     <div className="ws">
       <Sidebar />
@@ -50,9 +75,14 @@ export function Workspace() {
         <TabsBar />
         <div className="crumbs">
           {project?.name} <span className="sep">/</span> <b>{activeBoard ?? ''}</b>
+          <div className="views" role="tablist">
+            <button role="tab" aria-selected={view === 'board'} className={`btn sm ${view === 'board' ? 'on' : ''}`} onClick={() => set({ view: 'board' })}><IconLayoutBoard size={14} />{t('views.board')}</button>
+            <button role="tab" aria-selected={view === 'list'} className={`btn sm ${view === 'list' ? 'on' : ''}`} onClick={() => set({ view: 'list' })}><IconListDetails size={14} />{t('views.list')}</button>
+          </div>
         </div>
         <div className="area">
           {activeBoard ? <CanvasView key={activeBoard} /> : null}
+          {view === 'list' && <div className="overlay-page"><ListView /></div>}
           {error && (
             <div className="toast" role="alert" onClick={() => set({ error: null })}>{error}</div>
           )}
@@ -60,6 +90,7 @@ export function Workspace() {
         <StatusBar />
       </section>
       {selectedStage && <Inspector stageKey={selectedStage} />}
+      <SettingsDialog />
     </div>
   );
 }

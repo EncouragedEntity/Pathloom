@@ -11,6 +11,7 @@ import type { Scene } from './scene';
 import { CARD, CARD_W, edgeCurve, ellipsize, mixColors, statusColors, taskDone, withAlpha, wrapText, type CardLayout, type DepEdge } from './stage';
 import { measureText } from './measure';
 import type { CanvasLabels } from './editor-types';
+import { execAlpha, frameHeaderRect } from './ops';
 
 export interface RenderState {
   cam: Camera;
@@ -28,6 +29,10 @@ export interface RenderState {
   selEdge: { from: string; to: string } | null;
   editingId: string | null;
   labels: CanvasLabels;
+  /** Execution mode: dim by class, hide done tasks (via layoutOf), accent ready/active cards. */
+  exec: boolean;
+  /** done/total card members per frame id. */
+  frameStats: ReadonlyMap<string, { done: number; total: number }>;
 }
 
 export interface Overlay {
@@ -40,6 +45,8 @@ export interface Overlay {
   draftLine: { pts: Point[]; head: boolean } | null;
   draftPencil: [number, number, number][] | null;
   bindTarget: Element | null;
+  /** World points (top-right of the bounds) where a lock glyph is drawn for selected locked elements. */
+  locks: Point[];
 }
 
 /** A roughjs drawable flattened to Path2D parts, so redraws skip op-by-op replay. */
@@ -148,8 +155,10 @@ export class Renderer {
     const vb = visibleBounds(cam, s.width, s.height);
     const pad = 40 / cam.scale;
     const view = { minX: vb.minX - pad, minY: vb.minY - pad, maxX: vb.maxX + pad, maxY: vb.maxY + pad };
+    const list = s.scene.query(view);
+    for (const el of list) if (el.type === 'frame') this.drawElement(ctx, el, s); // frames sit under everything
     this.drawEdges(ctx, s, view);
-    for (const el of s.scene.query(view)) this.drawElement(ctx, el, s);
+    for (const el of list) if (el.type !== 'frame') this.drawElement(ctx, el, s);
   }
 
   private drawGrid(ctx: CanvasRenderingContext2D, s: RenderState) {
@@ -178,8 +187,10 @@ export class Renderer {
       if (Math.max(...xs) < view.minX || Math.min(...xs) > view.maxX || Math.max(...ys) < view.minY || Math.min(...ys) > view.maxY) continue;
       const sel = s.selEdge?.from === ed.from && s.selEdge.to === ed.to;
       const hi = sel || s.selected.has(a.id) || s.selected.has(b.id);
+      const k = s.exec ? Math.max(execAlpha('card', s.stages.get(ed.from)?.status), execAlpha('card', s.stages.get(ed.to)?.status)) : 1;
       const color = hi ? t.accent : ed.fromDone ? mixColors(t.ok, t.edge, 0.7) : t.edge;
       ctx.save();
+      ctx.globalAlpha = k;
       ctx.strokeStyle = color; ctx.fillStyle = color;
       ctx.lineWidth = sel ? 2.4 : hi ? 2 : 1.6;
       ctx.setLineDash(ed.soft ? [6, 5] : []);
@@ -198,15 +209,18 @@ export class Renderer {
   // ---- elements ----------------------------------------------------------------------------
 
   private drawElement(ctx: CanvasRenderingContext2D, el: Element, s: RenderState) {
+    const dim = s.exec ? execAlpha(el.type, el.type === 'card' ? s.stages.get((el as CardElement).ref)?.status : undefined) : 1;
     if (lodDot(el, s.cam.scale)) {
       // sub-2px element: one filled rect instead of the real geometry
       const k = Math.max(1 / s.cam.scale, 0);
       ctx.fillStyle = (el.type === 'text' ? el.stroke ?? s.theme.text : el.stroke ?? s.theme.text2);
+      if (dim !== 1) ctx.globalAlpha = dim;
       ctx.fillRect(el.x, el.y, Math.max(el.w, k), Math.max(el.h, k));
+      if (dim !== 1) ctx.globalAlpha = 1;
       return;
     }
     ctx.save();
-    if (el.opacity !== undefined) ctx.globalAlpha = el.opacity;
+    if (el.opacity !== undefined || dim !== 1) ctx.globalAlpha = (el.opacity ?? 1) * dim;
     switch (el.type) {
       case 'rect': case 'ellipse': case 'diamond': case 'sticky': this.drawShape(ctx, el as ShapeElement, s); break;
       case 'text': this.drawText(ctx, el as TextElement, s); break;
@@ -391,17 +405,53 @@ export class Renderer {
   }
 
   private drawFrame(ctx: CanvasRenderingContext2D, el: Element, s: RenderState) {
-    const t = s.theme;
+    const t = s.theme, sketch = s.style === 'sketch' && lodSketch(s.cam.scale);
     ctx.beginPath();
     ctx.roundRect(el.x, el.y, el.w, el.h, 18);
     ctx.fillStyle = withAlpha(t.card, 0.25); ctx.fill();
-    ctx.strokeStyle = t.border2; ctx.lineWidth = 1; ctx.setLineDash([6, 5]); ctx.stroke();
-    ctx.setLineDash([]);
-    const name = (el as { name?: string }).name;
-    if (name && 12 * s.cam.scale >= TEXT_MIN_PX) {
-      ctx.font = fontOf(12, t.fontUi, 500); ctx.fillStyle = t.text2;
-      ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
-      ctx.fillText(name, el.x + 6, el.y - 10);
+    if (sketch) {
+      const d = this.cachedRough(el, s, (g) => [g.rectangle(el.x, el.y, el.w, el.h, {
+        seed: el.seed ?? 1, roughness: el.roughness ?? 1, stroke: t.border2, strokeWidth: 1.4, bowing: 1, strokeLineDash: [8, 6],
+      })]);
+      this.drawParts(ctx, d);
+    } else { ctx.strokeStyle = t.border2; ctx.lineWidth = 1; ctx.setLineDash([6, 5]); ctx.stroke(); ctx.setLineDash([]); }
+    this.drawFrameHeader(ctx, el, s);
+  }
+
+  /** Name + mini progress bar + "{done} of {total} stages" above the top-left corner; screen-constant size, LOD below 0.5x. */
+  private drawFrameHeader(ctx: CanvasRenderingContext2D, el: Element, s: RenderState) {
+    const t = s.theme, name = (el as { name?: string }).name ?? '';
+    const hd = frameHeaderRect(el, s.cam.scale), sketch = s.style === 'sketch';
+    const fs = hd.fs * (sketch ? 1.2 : 1), cy = hd.y + hd.h / 2, px = el.x + hd.fs * 0.5;
+    const st = s.frameStats.get(el.id);
+    const barW = hd.fs * 5, barH = Math.max(hd.fs * 0.28, 1 / s.cam.scale);
+    const family = textFamily(t, s.style), nameFont = fontOf(100, family, 600);
+    const wOf = (txt: string, weight: number, size: number) => (measureText(txt, fontOf(100, family, weight)) * size) / 100;
+    const label = st ? s.labels.frameProgress.replace('{done}', String(st.done)).replace('{total}', String(st.total)) : '';
+    const small = fs * 0.85, labelW = label ? wOf(label, 400, small) : 0;
+    const extra = st ? barW + labelW + fs * 1.1 : 0;
+    const nameMax = Math.max(el.w - extra - fs, fs * 7);
+    const bar = (x: number) => {
+      ctx.fillStyle = t.border; ctx.beginPath(); ctx.roundRect(x, cy - barH / 2, barW, barH, barH / 2); ctx.fill();
+      if (st && st.done > 0) { ctx.fillStyle = t.ok; ctx.beginPath(); ctx.roundRect(x, cy - barH / 2, Math.max(barH, (barW * st.done) / st.total), barH, barH / 2); ctx.fill(); }
+    };
+    if (lodTextPx(fs, s.cam.scale)) {
+      if (!name && !st) return;
+      this.textBars(ctx, name, px, cy - fs * 0.625, fs, 'left', nameMax, t.text2, s.cam.scale);
+      if (st) bar(px + Math.min(nameMax, name.length * fs * 0.5) + fs * 0.5);
+      return;
+    }
+    let x = px;
+    if (name) {
+      const shown = ellipsize(name, (nameMax * 100) / fs, (q) => measureText(q, nameFont));
+      ctx.font = fontOf(fs, family, 600); ctx.fillStyle = t.text2; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+      ctx.fillText(shown, x, cy);
+      x += (measureText(shown, nameFont) * fs) / 100 + fs * 0.6;
+    }
+    if (st) {
+      bar(x);
+      ctx.font = fontOf(small, family, 400); ctx.fillStyle = t.muted; ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
+      ctx.fillText(label, x + barW + fs * 0.5, cy);
     }
   }
 
@@ -438,20 +488,21 @@ export class Renderer {
   private drawCardTiny(ctx: CanvasRenderingContext2D, stage: StageView, L: CardLayout, H: number, s: RenderState) {
     const t = s.theme, px = CARD.padX, W = CARD_W, cy = CARD.padTop + CARD.headH / 2;
     const fg = stage.status === 'done' ? t.ok : stage.status === 'active' ? t.warn : stage.status === 'ready' ? t.accent : t.muted;
-    ctx.fillStyle = fg; ctx.globalAlpha *= 0.5;
+    const a0 = ctx.globalAlpha;
+    ctx.fillStyle = fg; ctx.globalAlpha = a0 * 0.5;
     ctx.fillRect(W - px - 74, cy - 10, 74, 20);
     ctx.fillRect(px, cy - 5, 36, 10);
-    ctx.globalAlpha = 1;
+    ctx.globalAlpha = a0;
     const tsize = s.style === 'sketch' ? 30 : 24, lh = tsize * 1.2;
     if (tsize * s.cam.scale >= TEXT_MIN_PX) {
       const tfont = fontOf(tsize, textFamily(t, s.style), 600);
       ctx.font = tfont; ctx.fillStyle = t.text; ctx.textBaseline = 'top'; ctx.textAlign = 'left';
       this.farTitle(stage, tfont).forEach((ln, i) => ctx.fillText(ln, px, L.titleY + i * lh + (lh - tsize) / 2 - 1));
     } else {
-      ctx.fillStyle = t.text; ctx.globalAlpha = 0.45;
+      ctx.fillStyle = t.text; ctx.globalAlpha = a0 * 0.45;
       const n = Math.min(3, Math.max(1, L.titleLines.length));
       for (let i = 0; i < n; i++) ctx.fillRect(px, L.titleY + i * lh + lh * 0.3, i === n - 1 && n > 1 ? (W - px * 2) * 0.6 : W - px * 2, lh * 0.4);
-      ctx.globalAlpha = 1;
+      ctx.globalAlpha = a0;
     }
     const [d, n] = stage.progress;
     const y = H - CARD.padBottom - CARD.progH + CARD.progH / 2 - 2;
@@ -471,6 +522,7 @@ export class Renderer {
     ctx.strokeStyle = t.border; ctx.lineWidth = 1;
     if (!stage) ctx.setLineDash([6, 4]);
     ctx.stroke();
+    if (s.exec && stage && (stage.status === 'ready' || stage.status === 'active')) { ctx.strokeStyle = t.accent; ctx.lineWidth = 2.5; ctx.stroke(); }
     ctx.setLineDash([]);
     ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
     if (!stage) {
@@ -625,6 +677,12 @@ export class Renderer {
       ctx.beginPath();
       if (h.round) ctx.arc(x, y, 5, 0, Math.PI * 2); else ctx.rect(x - 4, y - 4, 8, 8);
       ctx.fillStyle = t.card; ctx.fill(); ctx.strokeStyle = t.accent; ctx.lineWidth = 1.5; ctx.stroke();
+    }
+    for (const pt of o.locks) {
+      const [x, y] = S(pt), cx = x + 10, cy = y - 10;
+      ctx.beginPath(); ctx.arc(cx, cy, 9, 0, Math.PI * 2); ctx.fillStyle = t.card; ctx.fill(); ctx.strokeStyle = t.accent; ctx.lineWidth = 1.2; ctx.stroke();
+      ctx.beginPath(); ctx.arc(cx, cy - 1.5, 2.8, Math.PI, 0); ctx.stroke();
+      ctx.beginPath(); ctx.roundRect(cx - 4, cy - 1.5, 8, 6, 1.2); ctx.fillStyle = t.accent; ctx.fill();
     }
     if (o.bindTarget) {
       const e = o.bindTarget;

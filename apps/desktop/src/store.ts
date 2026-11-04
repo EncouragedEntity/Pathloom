@@ -18,6 +18,9 @@ interface AppStore {
   save: SaveState;
   theme: ThemeId;
   error: string | null;
+  view: 'board' | 'list';
+  exec: boolean;
+  settingsTab: 'general' | 'keys' | null;
 
   enterProject(snap: ProjectSnapshot): Promise<void>;
   closeProject(): Promise<void>;
@@ -62,10 +65,13 @@ export const useApp = create<AppStore>((set, get) => ({
   save: { kind: 'saved' },
   theme: 'graphite',
   error: null,
+  view: 'board',
+  exec: false,
+  settingsTab: null,
 
   async enterProject(snap) {
     await get().flushSave();
-    set({ project: snap, boards: snap.boards, stages: snap.stages, openBoards: [], activeBoard: null, board: null, selectedStage: null });
+    set({ project: snap, boards: snap.boards, stages: snap.stages, openBoards: [], activeBoard: null, board: null, selectedStage: null, view: 'board', exec: false });
     const first = snap.boards.includes('roadmap') ? 'roadmap' : snap.boards[0];
     if (first) await get().openBoard(first);
   },

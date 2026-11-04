@@ -6,7 +6,7 @@
 
 ## Документи (читати перед роботою)
 - `docs/spec.md` — затверджена специфікація v0.1 (джерело правди).
-- `docs/m1-contracts.md` — API між модулями для поточного milestone.
+- `docs/m1-contracts.md`, `docs/m2-contracts.md` — API між модулями по milestone (останній — поточний).
 - `docs/discovery.md` — журнал рішень D1–D25 і причини.
 - `docs/research.md` — бібліотеки, ліцензії, ризики.
 - `prototypes/concepts.html` — клікабельний макет (обрано концепт A).

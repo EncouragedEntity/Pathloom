@@ -14,7 +14,7 @@ pub use board::BOARD_FORMAT;
 pub use error::{Error, Result};
 pub use keygen::generate_key;
 pub use model::{
-    AgentChanges, Board, Comment, Dep, Priority, ProjectConfig, Stage, StageKind, StageView, Status,
+    AgentChanges, Board, Comment, Dep, Priority, ProjectConfig, Stage, StageKind, StageMeta, StageView, Status,
     Task, Who,
 };
 pub use project::Project;

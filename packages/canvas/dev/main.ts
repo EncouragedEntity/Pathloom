@@ -29,6 +29,7 @@ const raw: RawStage[] = [
   { key: 'M6', title: 'Public release 0.1', who: 'me', due: 'Dec 26', priority: 'med', branch: null, depends: [{ id: 'M5', soft: false }], tasks: [t('M6-01', 'README and screenshots'), t('M6-02', 'FUNDING.yml'), t('M6-03', 'Announcement post')] },
 ];
 
+const rawInit: RawStage[] = structuredClone(raw);
 const taskDone = (x: Task): boolean => (x.sub.length ? x.sub.every(taskDone) : x.done);
 function views(): StageView[] {
   const status = new Map<string, StageStatus>();
@@ -127,7 +128,7 @@ function applyTheme(t2: ThemeTokens) {
 
 const tools: [Tool, string, string][] = [
   ['select', 'Select', 'V'], ['hand', 'Hand', 'H'], ['rect', 'Rect', '2'], ['diamond', 'Diamond', '3'], ['ellipse', 'Ellipse', '4'],
-  ['arrow', 'Arrow', '5'], ['line', 'Line', 'L'], ['pencil', 'Pencil', '6'], ['text', 'Text', '7'], ['stage', 'Stage', 'S'],
+  ['arrow', 'Arrow', '5'], ['line', 'Line', 'L'], ['pencil', 'Pencil', '6'], ['text', 'Text', '7'], ['stage', 'Stage', 'S'], ['frame', 'Frame', 'F'],
 ];
 const actions: [string, string, () => void][] = [
   ['undo', 'Undo', () => editor.undo()], ['redo', 'Redo', () => editor.redo()], ['fit', 'Fit', () => editor.zoomToFit()],
@@ -135,6 +136,8 @@ const actions: [string, string, () => void][] = [
   ['theme', 'Theme: Midnight', () => { applyTheme(theme === midnight ? paper : midnight); setLabel('theme', theme === midnight ? 'Theme: Midnight' : 'Theme: Paper'); }],
   ['convert', 'To stage', () => { void editor.convertSelectionToStage(); }],
   ['stress', 'Shapes 2000', () => stress()], ['cards', 'Cards 200', () => loadPreset('cards')], ['both', 'Both', () => loadPreset('both')], ['bench', 'Bench', () => { void runBench('both', style); }],
+  ['phases', 'Phases', () => loadPreset('phases')],
+  ['exec', 'Execution: off', () => { editor.setExecutionMode(!editor.getExecutionMode()); setLabel('exec', `Execution: ${editor.getExecutionMode() ? 'on' : 'off'}`); }],
   ['pan', 'Pan test', () => panTest()],
 ];
 bar.innerHTML = tools.map(([k, l, s]) => `<button data-tool="${k}" title="${l}">${l}<kbd>${s}</kbd></button>`).join('') + '<span class="sep"></span>' +
@@ -204,7 +207,29 @@ function cardPreset(): Element[] {
   return out;
 }
 
-function loadPreset(kind: 'shapes' | 'cards' | 'both') {
+/** Three phase frames holding cards in different statuses (done / active+ready+blocked / blocked), plus loose shapes. */
+function phasesPreset(): Element[] {
+  raw.length = 0; raw.push(...structuredClone(rawInit));
+  const groups: [string, string[]][] = [['Phase 1 · Foundation', ['S0', 'M0']], ['Phase 2 · Build', ['M1', 'M2', 'M3']], ['Phase 3 · Ship', ['M4', 'M5', 'M6']]];
+  const out: Element[] = [];
+  groups.forEach(([name, keys], i) => {
+    const fid = 'pf' + i, fx = i * 390;
+    out.push({ id: fid, type: 'frame', name, x: fx, y: 0, w: 330, h: 920, index: next(), seed: i + 3, roughness: 1 } as Element);
+    keys.forEach((k, j) => out.push({ ...(card(k, fx + 40, 40 + j * 290) as object), id: 'pc' + k, frame: fid, index: next() } as Element));
+  });
+  out.push({ id: 'ps1', type: 'sticky', x: 1230, y: 60, w: 130, h: 100, text: 'Loose idea', index: next(), seed: 5, ...base } as Element);
+  out.push({ id: 'pr1', type: 'rect', x: 1230, y: 220, w: 150, h: 80, text: 'Shape', index: next(), seed: 6, ...base } as Element);
+  return out;
+}
+
+function loadPreset(kind: 'shapes' | 'cards' | 'both' | 'phases') {
+  if (kind === 'phases') {
+    const els = phasesPreset();
+    editor.setStages(views());
+    editor.setBoard({ format: 'pathloom.board/1', title: 'Phases', style, elements: els });
+    note = 'preset phases'; refreshInfo();
+    return;
+  }
   const els: Element[] = [];
   if (kind !== 'shapes') { els.push(...cardPreset()); editor.setStages(views()); }
   if (kind !== 'cards') els.push(...shapePreset());
@@ -255,7 +280,7 @@ async function runBench(kind: 'shapes' | 'cards' | 'both', st: 'clean' | 'sketch
   const q = new URLSearchParams(location.search), bk = q.get('bench'), pk = q.get('preset');
   if (q.get('theme') === 'paper') { applyTheme(paper); setLabel('theme', 'Theme: Paper'); }
   if (bk === 'shapes' || bk === 'cards' || bk === 'both') void runBench(bk, q.get('style') === 'sketch' ? 'sketch' : 'clean');
-  else if (pk === 'shapes' || pk === 'cards' || pk === 'both') {
+  else if (pk === 'shapes' || pk === 'cards' || pk === 'both' || pk === 'phases') {
     style = q.get('style') === 'sketch' ? 'sketch' : 'clean'; editor.setStyle(style); setLabel('style', `Style: ${style}`);
     loadPreset(pk);
   }

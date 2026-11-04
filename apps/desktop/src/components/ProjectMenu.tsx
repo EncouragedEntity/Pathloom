@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  IconChevronDown, IconPlus, IconFolderOpen, IconClock, IconX, IconLanguage, IconPalette, IconCheck,
+  IconChevronDown, IconPlus, IconFolderOpen, IconClock, IconX, IconLanguage, IconPalette, IconCheck, IconSettings, IconKeyboard,
 } from '@tabler/icons-react';
 import { api, errorText, type RecentProject } from '../api';
 import { useApp } from '../store';
 import { setLanguage } from '../i18n';
 import { createProject, openProject, reopenLastEnabled, setReopenLast } from '../projectActions';
 import type { ThemeId } from '../theme';
+import { effectiveKeymap, label, useKeys } from '../keys';
 
 const THEME_NAMES: Record<ThemeId, string> = { graphite: 'Graphite', paper: 'Warm paper' };
 
@@ -19,6 +20,7 @@ export function ProjectMenu() {
   const [recent, setRecent] = useState<RecentProject[]>([]);
   const [reopen, setReopen] = useState(reopenLastEnabled());
   const ref = useRef<HTMLDivElement>(null);
+  const keys = effectiveKeymap(useKeys((s) => s.overrides));
 
   useEffect(() => {
     if (open) api.recentProjects().then(setRecent).catch(() => setRecent([]));
@@ -28,7 +30,6 @@ export function ProjectMenu() {
     const onDoc = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setOpen(false);
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') { e.preventDefault(); void run(() => openProject()); }
     };
     document.addEventListener('mousedown', onDoc);
     window.addEventListener('keydown', onKey);
@@ -56,7 +57,7 @@ export function ProjectMenu() {
       {open && (
         <div className="pm-pop" role="menu">
           <button role="menuitem" onClick={() => run(createProject)}><IconPlus size={15} />{t('menu.newProject')}</button>
-          <button role="menuitem" onClick={() => run(() => openProject())}><IconFolderOpen size={15} />{t('menu.openFolder')}<kbd>Ctrl O</kbd></button>
+          <button role="menuitem" onClick={() => run(() => openProject())}><IconFolderOpen size={15} />{t('menu.openFolder')}<kbd>{label('app.openFolder', keys)}</kbd></button>
           {others.length > 0 && <div className="pm-sec">{t('start.recent')}</div>}
           {others.map((r) => (
             <button key={r.path} role="menuitem" title={r.path} onClick={() => run(() => openProject(r.path))}>
@@ -74,6 +75,8 @@ export function ProjectMenu() {
           <button role="menuitem" onClick={() => set({ theme: theme === 'graphite' ? 'paper' : 'graphite' })}>
             <IconPalette size={15} />{t('sidebar.theme')}<span className="pm-val">{THEME_NAMES[theme]}</span>
           </button>
+          <button role="menuitem" onClick={() => { setOpen(false); set({ settingsTab: 'general' }); }}><IconSettings size={15} />{t('menu.allSettings')}<kbd>{label('app.settings', keys)}</kbd></button>
+          <button role="menuitem" onClick={() => { setOpen(false); set({ settingsTab: 'keys' }); }}><IconKeyboard size={15} />{t('settings.shortcuts')}</button>
           <div className="pm-sep" />
           <button role="menuitem" onClick={() => run(closeProject)}><IconX size={15} />{t('menu.closeProject')}</button>
         </div>

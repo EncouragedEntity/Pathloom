@@ -6,7 +6,7 @@ mod recent;
 use std::path::Path;
 use std::sync::Mutex;
 
-use pathloom_core::{Board, Project, StageView, Task};
+use pathloom_core::{Board, Project, StageMeta, StageView, Task};
 use serde::Serialize;
 use tauri::{AppHandle, State};
 
@@ -148,6 +148,51 @@ fn stage_rename(state: State<'_, AppState>, key: String, title: String) -> CmdRe
 }
 
 #[tauri::command]
+fn stage_update(state: State<'_, AppState>, key: String, meta: StageMeta) -> CmdResult<Vec<StageView>> {
+    with_project(&state, |p| {
+        p.update_meta(&key, meta)?;
+        views(p)
+    })
+}
+
+#[tauri::command]
+fn stage_source(state: State<'_, AppState>, key: String) -> CmdResult<String> {
+    with_project(&state, |p| p.stage_source(&key))
+}
+
+#[tauri::command]
+fn stage_delete(state: State<'_, AppState>, key: String) -> CmdResult<Vec<StageView>> {
+    with_project(&state, |p| {
+        p.delete_stage(&key)?;
+        views(p)
+    })
+}
+
+#[tauri::command]
+fn task_rename(state: State<'_, AppState>, task_id: String, title: String) -> CmdResult<Vec<StageView>> {
+    with_project(&state, |p| {
+        p.rename_task(&task_id, &title)?;
+        views(p)
+    })
+}
+
+#[tauri::command]
+fn task_remove(state: State<'_, AppState>, task_id: String) -> CmdResult<Vec<StageView>> {
+    with_project(&state, |p| {
+        p.remove_task(&task_id)?;
+        views(p)
+    })
+}
+
+#[tauri::command]
+fn subtask_add(state: State<'_, AppState>, task_id: String, title: String) -> CmdResult<Vec<StageView>> {
+    with_project(&state, |p| {
+        p.add_subtask(&task_id, &title)?;
+        views(p)
+    })
+}
+
+#[tauri::command]
 fn stage_link(state: State<'_, AppState>, from: String, to: String) -> CmdResult<Vec<StageView>> {
     with_project(&state, |p| {
         p.link(&from, &to, false)?;
@@ -181,6 +226,12 @@ pub fn run() {
             task_toggle,
             task_add,
             stage_rename,
+            stage_update,
+            stage_source,
+            stage_delete,
+            task_rename,
+            task_remove,
+            subtask_add,
             stage_link,
             stage_unlink,
         ])

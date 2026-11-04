@@ -3,12 +3,13 @@ import { useTranslation } from 'react-i18next';
 import {
   IconHandStop, IconPointer, IconSquare, IconDiamond, IconCircle, IconArrowUpRight, IconLine,
   IconPencil, IconTypography, IconLayoutCards, IconMinus, IconPlus, IconMaximize,
-  IconArrowBackUp, IconArrowForwardUp,
+  IconArrowBackUp, IconArrowForwardUp, IconFrame,
 } from '@tabler/icons-react';
 import { createEditor, type CanvasHost, type Tool } from '@pathloom/canvas';
 import { api, errorText } from '../api';
 import { editorRef, useApp } from '../store';
 import { THEMES } from '../theme';
+import { canvasPart, effectiveKeymap, label, useKeys } from '../keys';
 
 const TOOLS: { tool: Tool; key: string; icon: typeof IconSquare }[] = [
   { tool: 'hand', key: 'H', icon: IconHandStop },
@@ -20,6 +21,7 @@ const TOOLS: { tool: Tool; key: string; icon: typeof IconSquare }[] = [
   { tool: 'line', key: 'L', icon: IconLine },
   { tool: 'pencil', key: '6', icon: IconPencil },
   { tool: 'text', key: '7', icon: IconTypography },
+  { tool: 'frame', key: 'F', icon: IconFrame },
   { tool: 'stage', key: 'S', icon: IconLayoutCards },
 ];
 
@@ -29,6 +31,8 @@ export function CanvasView() {
   const tool = useApp((s) => s.tool);
   const zoom = useApp((s) => s.zoom);
   const theme = useApp((s) => s.theme);
+  const exec = useApp((s) => s.exec);
+  const keys = effectiveKeymap(useKeys((s) => s.overrides));
 
   useEffect(() => {
     const el = ref.current;
@@ -74,6 +78,7 @@ export function CanvasView() {
       host,
       theme: th.tokens,
       style: state.board.style ?? th.style,
+      keymap: canvasPart(effectiveKeymap(useKeys.getState().overrides)),
       labels: {
         newStage: t('canvas.newStage'),
         cycleError: t('canvas.cycleError'),
@@ -87,9 +92,21 @@ export function CanvasView() {
         whoBoth: t('who.both'),
         priorityHigh: t('inspector.priorities.high'),
         moreTasks: t('canvas.moreTasks'),
+        frameDefaultName: t('canvas.frameDefaultName'),
+        frameProgress: t('canvas.frameProgress'),
+        ctxConvertToStage: t('canvas.ctxConvertToStage'),
+        ctxDuplicate: t('canvas.ctxDuplicate'),
+        ctxDelete: t('canvas.ctxDelete'),
+        ctxBringToFront: t('canvas.ctxBringToFront'),
+        ctxSendToBack: t('canvas.ctxSendToBack'),
+        ctxLock: t('canvas.ctxLock'),
+        ctxUnlock: t('canvas.ctxUnlock'),
+        ctxOpenStage: t('canvas.ctxOpenStage'),
+        ctxRename: t('canvas.ctxRename'),
       },
     });
     editorRef.current = editor;
+    if (state.exec) editor.setExecutionMode(true);
     return () => {
       editor.destroy();
       if (editorRef.current === editor) editorRef.current = null;
@@ -102,20 +119,29 @@ export function CanvasView() {
     editorRef.current?.setTheme(THEMES[theme].tokens);
   }, [theme]);
 
+  useEffect(() => {
+    editorRef.current?.setExecutionMode(exec);
+  }, [exec]);
+
+  const keysJson = JSON.stringify(keys);
+  useEffect(() => {
+    editorRef.current?.setKeymap(canvasPart(JSON.parse(keysJson)));
+  }, [keysJson]);
+
   return (
     <>
       <div ref={ref} className="canvas-host" />
-      <div className="toolbar" role="toolbar">
-        {TOOLS.map(({ tool: tl, key, icon: Icon }) => (
+      <div className={`toolbar ${exec ? 'hidden' : ''}`} role="toolbar">
+        {TOOLS.map(({ tool: tl, icon: Icon }) => (
           <button
             key={tl}
             className={tool === tl ? 'on' : ''}
-            title={`${t(`tools.${tl}`)} (${key})`}
+            title={`${t(`tools.${tl}`)} (${label(`tool.${tl}`, keys)})`}
             aria-label={t(`tools.${tl}`)}
             onClick={() => editorRef.current?.setTool(tl)}
           >
             <Icon size={18} />
-            <sub>{key}</sub>
+            <sub>{label(`tool.${tl}`, keys)}</sub>
           </button>
         ))}
       </div>
@@ -125,8 +151,8 @@ export function CanvasView() {
         <button aria-label={t('common.zoomIn')} onClick={() => editorRef.current?.zoomTo(zoom * 1.2)}><IconPlus size={15} /></button>
         <button aria-label={t('common.fit')} title={t('common.fit')} onClick={() => editorRef.current?.zoomToFit()}><IconMaximize size={15} /></button>
         <span className="vsep" />
-        <button aria-label={t('common.undo')} title={t('common.undo')} onClick={() => editorRef.current?.undo()}><IconArrowBackUp size={15} /></button>
-        <button aria-label={t('common.redo')} title={t('common.redo')} onClick={() => editorRef.current?.redo()}><IconArrowForwardUp size={15} /></button>
+        <button aria-label={t('common.undo')} title={`${t('common.undo')} (${label('edit.undo', keys)})`} onClick={() => editorRef.current?.undo()}><IconArrowBackUp size={15} /></button>
+        <button aria-label={t('common.redo')} title={`${t('common.redo')} (${label('edit.redo', keys)})`} onClick={() => editorRef.current?.redo()}><IconArrowForwardUp size={15} /></button>
       </div>
     </>
   );

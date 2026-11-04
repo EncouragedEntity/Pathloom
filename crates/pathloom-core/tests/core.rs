@@ -319,3 +319,33 @@ fn set_title_keeps_key_and_rejects_empty() {
     assert_eq!(p.load_stage("A1").unwrap().title, "Новий заголовок");
     assert!(p.set_title("A1", "   ").is_err());
 }
+
+#[test]
+fn update_meta_partial_and_clear() {
+    let (_d, p) = project();
+    p.create_stage("Meta", Some("ME")).unwrap();
+    let s = p
+        .update_meta("ME", StageMeta { who: Some(Who::Me), priority: Some(Priority::High), due: Some("2026-12-01".into()), branch: Some("feat/x".into()), ..Default::default() })
+        .unwrap();
+    assert_eq!((s.who, s.priority, s.due.as_deref(), s.branch.as_deref()), (Who::Me, Priority::High, Some("2026-12-01"), Some("feat/x")));
+    let s = p.update_meta("ME", StageMeta { due: Some(String::new()), ..Default::default() }).unwrap();
+    assert_eq!(s.due, None);
+    assert_eq!(s.branch.as_deref(), Some("feat/x"));
+    assert!(p.stage_source("ME").unwrap().contains("priority: high"));
+    assert!(p.update_meta("ME", StageMeta { title: Some("  ".into()), ..Default::default() }).is_err());
+}
+
+#[test]
+fn add_subtask_letters_and_parent_reopens() {
+    let (_d, p) = project();
+    p.create_stage("Sub", Some("SB")).unwrap();
+    p.add_task("SB", "Parent").unwrap();
+    p.set_task_done("SB-01", true).unwrap();
+    p.add_subtask("SB-01", "first").unwrap();
+    let s = p.add_subtask("SB-01", "second").unwrap();
+    let ids: Vec<_> = s.tasks[0].sub.iter().map(|t| t.id.as_str()).collect();
+    assert_eq!(ids, ["SB-01a", "SB-01b"]);
+    assert!(!s.tasks[0].done);
+    let reread = p.load_stage("SB").unwrap();
+    assert_eq!(reread.tasks[0].sub.len(), 2);
+}

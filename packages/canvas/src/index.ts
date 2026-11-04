@@ -3,3 +3,4 @@ export type { Editor, EditorOptions, CanvasHost, CanvasLabels, Tool, EditorStats
 export { DEFAULT_LABELS } from './editor-types';
 export * from './types';
 export { cardLayout, extractEdges, statusColors, CARD_W } from './stage';
+export * from './keymap';

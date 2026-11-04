@@ -315,7 +315,7 @@ docs/  prototypes/
 | M2 | **Roadmap** | Стани ready/blocked, заборона циклів, frames-фази з прогресом, Execution mode, sidebar outline з фільтрами, Inspector (деталі + файл), Список, `Convert to stage`. |
 | M3 | **Агенти** | CLI повністю, MCP-сервер, `apply` + auto-layout, live reload з підсвіткою, undo змін агента, review-режим з пропозиціями, Claude Code плагін. |
 | M4 | **Повне полотно й вигляд** | Image, sticky, eraser, lock, group, align, snap, minimap, semantic zoom, sketch-стиль, 3 теми + власні, en/uk, Ctrl+K, пошук, Огляд. |
-| M5 | **Реліз** | Інсталятори Win/macOS/Linux, «Install command line tool», CI (GitHub Actions), README, публічний репо. |
+| M5 | **Реліз** | Інсталятори Win/macOS/Linux, «Install command line tool», CI (GitHub Actions), гарний README двома мовами (en + uk) зі скріншотами, GIF і прикладами використання з агентом, публічний репо. |
 
 ## 13. Відкриті питання (не блокують старт M1)
 

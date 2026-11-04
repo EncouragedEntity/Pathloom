@@ -139,3 +139,16 @@ pub struct ProjectConfig {
     pub plan_dir: String,
     pub agent_changes: AgentChanges,
 }
+
+/// Partial update of a stage's frontmatter. `None` leaves a field unchanged;
+/// for `due` and `branch` an empty string clears the value.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct StageMeta {
+    pub title: Option<String>,
+    pub kind: Option<StageKind>,
+    pub who: Option<Who>,
+    pub priority: Option<Priority>,
+    pub due: Option<String>,
+    pub branch: Option<String>,
+}

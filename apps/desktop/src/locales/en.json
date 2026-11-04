@@ -31,7 +31,8 @@
     "line": "Line",
     "pencil": "Pencil",
     "text": "Text",
-    "stage": "Stage card"
+    "stage": "Stage card",
+    "frame": "Frame (phase)"
   },
   "status": {
     "done": "Done",
@@ -59,7 +60,19 @@
       "low": "Low",
       "med": "Medium",
       "high": "High"
-    }
+    },
+    "details": "Details",
+    "file": "File",
+    "kind": "Type",
+    "kinds": {
+      "stage": "Stage",
+      "milestone": "Milestone"
+    },
+    "addSubtask": "Add subtask",
+    "removeTask": "Remove task",
+    "deleteStage": "Delete stage",
+    "deleteConfirm": "Delete stage {{key}} «{{title}}»? Its file will be removed and links to it dropped.",
+    "fileHint": "This is a plain file in your project. Agents can edit it directly; the board updates right away."
   },
   "statusbar": {
     "ready": "{{count}} tasks ready",
@@ -72,7 +85,18 @@
     "newStage": "New stage",
     "cycleError": "This link would create a cycle",
     "missingStage": "Stage not found",
-    "moreTasks": "+{n} more"
+    "moreTasks": "+{n} more",
+    "frameDefaultName": "Phase",
+    "frameProgress": "{done} of {total} stages",
+    "ctxConvertToStage": "Convert to stage",
+    "ctxDuplicate": "Duplicate",
+    "ctxDelete": "Delete",
+    "ctxBringToFront": "Bring to front",
+    "ctxSendToBack": "Send to back",
+    "ctxLock": "Lock",
+    "ctxUnlock": "Unlock",
+    "ctxOpenStage": "Open stage",
+    "ctxRename": "Rename"
   },
   "common": {
     "undo": "Undo",
@@ -86,6 +110,76 @@
     "openFolder": "Open folder…",
     "settings": "Settings",
     "reopenLast": "Reopen last project on start",
-    "closeProject": "Close project"
+    "closeProject": "Close project",
+    "allSettings": "All settings…"
+  },
+  "list": {
+    "next": "Ready to do",
+    "blocked": "Blocked",
+    "done": "Done",
+    "all": "All",
+    "task": "Task",
+    "stage": "Stage",
+    "state": "Stage state",
+    "count": "{{count}} tasks",
+    "empty": "No tasks match."
+  },
+  "views": {
+    "board": "Board",
+    "list": "List"
+  },
+  "exec": {
+    "on": "Focus",
+    "hint": "Focus mode: hides finished work, highlights what you can do now, editing is off"
+  },
+  "commands": {
+    "tool.select": "Select",
+    "tool.hand": "Hand (pan)",
+    "tool.rect": "Rectangle",
+    "tool.diamond": "Diamond",
+    "tool.ellipse": "Ellipse",
+    "tool.arrow": "Arrow",
+    "tool.line": "Line",
+    "tool.pencil": "Pencil",
+    "tool.text": "Text",
+    "tool.frame": "Frame (phase)",
+    "tool.stage": "Stage card",
+    "edit.undo": "Undo",
+    "edit.redo": "Redo",
+    "edit.delete": "Delete selection",
+    "edit.duplicate": "Duplicate",
+    "edit.copy": "Copy",
+    "edit.paste": "Paste",
+    "edit.selectAll": "Select all",
+    "edit.convertToStage": "Convert shape to stage",
+    "arrange.front": "Bring to front",
+    "arrange.back": "Send to back",
+    "edit.toggleLock": "Lock / unlock",
+    "edit.cancel": "Cancel / back to select",
+    "view.zoomIn": "Zoom in",
+    "view.zoomOut": "Zoom out",
+    "view.fit": "Fit everything",
+    "view.zoom100": "Zoom to 100%",
+    "app.focus": "Focus mode",
+    "app.toggleView": "Switch Board / List",
+    "app.openFolder": "Open folder",
+    "app.settings": "Settings"
+  },
+  "settings": {
+    "general": "General",
+    "shortcuts": "Keyboard shortcuts",
+    "pressKeys": "Press keys… (Esc to cancel)",
+    "shortcutsHint": "Each command can have several shortcuts. Click a shortcut to change it, × removes it, + adds another one. Shortcuts follow physical keys, so they work with any keyboard layout.",
+    "conflict": "Also used by: {{with}}",
+    "reset": "Reset to default",
+    "resetAll": "Reset all shortcuts",
+    "groups": {
+      "tools": "Tools",
+      "edit": "Editing",
+      "view": "View",
+      "app": "App"
+    },
+    "addKey": "Add shortcut",
+    "removeKey": "Remove this shortcut"
   }
 }
