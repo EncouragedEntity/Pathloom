@@ -43,6 +43,7 @@ export const api = {
   taskRename: (taskId: string, title: string) => invoke<StageView[]>('task_rename', { taskId, title }),
   taskRemove: (taskId: string) => invoke<StageView[]>('task_remove', { taskId }),
   subtaskAdd: (taskId: string, title: string) => invoke<StageView[]>('subtask_add', { taskId, title }),
+  themesList: () => invoke<unknown[]>('themes_list'),
   assetSave: (name: string, bytes: number[]) => invoke<string>('asset_save', { name, bytes }),
   stageRename: (key: string, title: string) => invoke<StageView[]>('stage_rename', { key, title }),
   stageLink: (from: string, to: string) => invoke<StageView[]>('stage_link', { from, to }),

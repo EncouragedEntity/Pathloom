@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { Board, Editor, StageView, Tool } from '@pathloom/canvas';
 import { api, errorText, type ProjectSnapshot } from './api';
 import type { Proposal } from './agentSync';
-import type { ThemeId } from './theme';
+import { parseCustomTheme, type AppTheme, type ThemeId } from './theme';
 
 type SaveState = { kind: 'saved' } | { kind: 'saving' } | { kind: 'error'; message: string };
 
@@ -18,6 +18,7 @@ interface AppStore {
   zoom: number;
   save: SaveState;
   theme: ThemeId;
+  customThemes: AppTheme[];
   /** Drawing style: follow the theme's default, or force one. */
   renderStyle: 'theme' | 'clean' | 'sketch';
   error: string | null;
@@ -46,7 +47,7 @@ interface AppStore {
 function savedTheme(): ThemeId {
   try {
     const t = localStorage.getItem('pathloom.theme');
-    return t === 'light' || t === 'paper' || t === 'graphite' ? t : 'graphite';
+    return t || 'graphite';
   } catch {
     return 'graphite';
   }
@@ -92,6 +93,7 @@ export const useApp = create<AppStore>((set, get) => ({
   zoom: 1,
   save: { kind: 'saved' },
   theme: savedTheme(),
+  customThemes: [],
   renderStyle: savedStyle(),
   error: null,
   view: 'board',
@@ -114,6 +116,9 @@ export const useApp = create<AppStore>((set, get) => ({
   async enterProject(snap) {
     await get().flushSave();
     set({ project: snap, boards: snap.boards, stages: snap.stages, openBoards: [], activeBoard: null, board: null, selectedStage: null, view: 'board', exec: false, proposals: [], agentChange: null, boardConflict: false });
+    api.themesList()
+      .then((raw) => set({ customThemes: raw.map(parseCustomTheme).filter((t): t is AppTheme => t !== null) }))
+      .catch(() => set({ customThemes: [] }));
     const first = snap.boards.includes('roadmap') ? 'roadmap' : snap.boards[0];
     if (first) await get().openBoard(first);
   },

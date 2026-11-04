@@ -8,7 +8,7 @@ import {
 import { createEditor, type CanvasHost, type Tool } from '@pathloom/canvas';
 import { api, assetUrl, errorText } from '../api';
 import { editorRef, useApp } from '../store';
-import { THEMES } from '../theme';
+import { findTheme } from '../theme';
 import { canvasPart, effectiveKeymap, label, useKeys } from '../keys';
 
 const TOOLS: { tool: Tool; key: string; icon: typeof IconSquare }[] = [
@@ -38,7 +38,9 @@ export function CanvasView() {
   const renderStyle = useApp((s) => s.renderStyle);
   const snap = useApp((s) => s.snap);
   const minimap = useApp((s) => s.minimap);
-  const style = renderStyle === 'theme' ? THEMES[theme].style : renderStyle;
+  const customThemes = useApp((s) => s.customThemes);
+  const themeObj = findTheme(theme, customThemes);
+  const style = renderStyle === 'theme' ? themeObj.style : renderStyle;
   const keys = effectiveKeymap(useKeys((s) => s.overrides));
 
   useEffect(() => {
@@ -79,7 +81,7 @@ export function CanvasView() {
       saveAsset: async (file, name) => api.assetSave(name, Array.from(new Uint8Array(await file.arrayBuffer()))),
     };
 
-    const th = THEMES[state.theme];
+    const th = findTheme(state.theme, state.customThemes);
     const editor = createEditor(el, {
       board: state.board,
       stages: state.stages,
@@ -140,8 +142,8 @@ export function CanvasView() {
   }, []);
 
   useEffect(() => {
-    editorRef.current?.setTheme(THEMES[theme].tokens);
-  }, [theme]);
+    editorRef.current?.setTheme(findTheme(theme, customThemes).tokens);
+  }, [theme, customThemes]);
 
   useEffect(() => {
     editorRef.current?.setStyle(style);

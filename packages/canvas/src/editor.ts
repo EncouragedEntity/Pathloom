@@ -1008,6 +1008,8 @@ class EditorImpl implements Editor {
     this.selected = new Set([id]); this.selEdge = null;
     this.emitSelection();
     this.setTool('select');
+    // A sticky note exists to hold text: start typing right away.
+    if (sticky) { const el = this.scene.get(id); if (el) this.startEdit(el, w); }
   }
 
   /** Key for a new frame: above the other frames, below every non-frame element. */

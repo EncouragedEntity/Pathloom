@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { IconX, IconRotate, IconAlertTriangle, IconKeyboard, IconAdjustments, IconPlus } from '@tabler/icons-react';
 import { useApp } from '../store';
-import { THEME_NAMES, THEME_ORDER } from '../theme';
+import { allThemes } from '../theme';
 import { setLanguage } from '../i18n';
 import { reopenLastEnabled, setReopenLast } from '../projectActions';
 import {
@@ -105,7 +105,7 @@ function Shortcuts() {
 
 function General() {
   const { t, i18n } = useTranslation();
-  const { theme, renderStyle, set } = useApp();
+  const { theme, renderStyle, customThemes, set } = useApp();
   const [reopen, setReopen] = useState(reopenLastEnabled());
   return (
     <dl className="meta settings-general">
@@ -119,7 +119,7 @@ function General() {
       <dt>{t('sidebar.theme')}</dt>
       <dd>
         <select value={theme} onChange={(e) => set({ theme: e.target.value as typeof theme })}>
-          {THEME_ORDER.map((id) => <option key={id} value={id}>{THEME_NAMES[id]}</option>)}
+          {allThemes(customThemes).map((th) => <option key={th.id} value={th.id}>{th.name}</option>)}
         </select>
       </dd>
       <dt>{t('settings.renderStyle')}</dt>

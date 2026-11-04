@@ -1,9 +1,12 @@
 import type { ThemeTokens } from '@pathloom/canvas';
 
-export type ThemeId = 'graphite' | 'light' | 'paper';
+export type BuiltinThemeId = 'graphite' | 'light' | 'paper';
+/** Built-in id or `custom:<slug>` for themes loaded from files. */
+export type ThemeId = string;
 
 export interface AppTheme {
   id: ThemeId;
+  name?: string;
   mode: 'dark' | 'light';
   style: 'clean' | 'sketch';
   tokens: ThemeTokens;
@@ -15,7 +18,7 @@ const fonts = {
   fontMono: '"JetBrains Mono", ui-monospace, monospace',
 };
 
-export const THEMES: Record<ThemeId, AppTheme> = {
+export const THEMES: Record<BuiltinThemeId, AppTheme> = {
   graphite: {
     id: 'graphite', mode: 'dark', style: 'clean',
     tokens: {
@@ -57,6 +60,44 @@ export function applyCssVars(t: ThemeTokens): void {
   for (const [k, v] of Object.entries(map)) s.setProperty(k, v);
 }
 
-export const THEME_NAMES: Record<ThemeId, string> = { graphite: 'Graphite', light: 'Light', paper: 'Warm paper' };
-export const THEME_ORDER: ThemeId[] = ['graphite', 'light', 'paper'];
-export const nextTheme = (t: ThemeId): ThemeId => THEME_ORDER[(THEME_ORDER.indexOf(t) + 1) % THEME_ORDER.length];
+const BUILTIN_NAMES: Record<BuiltinThemeId, string> = { graphite: 'Graphite', light: 'Light', paper: 'Warm paper' };
+const BUILTIN_ORDER: BuiltinThemeId[] = ['graphite', 'light', 'paper'];
+
+/** All themes: built-ins first, then custom ones. */
+export function allThemes(custom: AppTheme[]): AppTheme[] {
+  return [...BUILTIN_ORDER.map((id) => ({ ...THEMES[id], name: BUILTIN_NAMES[id] })), ...custom];
+}
+export function findTheme(id: ThemeId, custom: AppTheme[]): AppTheme {
+  return allThemes(custom).find((t) => t.id === id) ?? THEMES.graphite;
+}
+export function nextTheme(id: ThemeId, custom: AppTheme[]): ThemeId {
+  const list = allThemes(custom);
+  const i = list.findIndex((t) => t.id === id);
+  return list[(i + 1) % list.length].id;
+}
+
+// ---- custom themes (.pathloom/themes/*.json or <app config>/themes/*.json, spec §6) ----
+
+const COLOR = /^(#[0-9a-fA-F]{3,8}|rgba?\([\d\s.,%]+\)|hsla?\([\d\s.,%deg]+\))$/;
+const COLOR_KEYS = ['bg', 'panel', 'card', 'card2', 'border', 'border2', 'text', 'text2', 'muted', 'accent', 'onAccent', 'ok', 'warn', 'bad', 'edge', 'grid'] as const;
+
+/** Turns a theme file into an AppTheme; unknown or invalid colors fall back to Graphite/Light. Null if unusable. */
+export function parseCustomTheme(raw: unknown): AppTheme | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as { name?: unknown; mode?: unknown; style?: unknown; colors?: Record<string, unknown>; radius?: { card?: unknown }; font?: Record<string, unknown> };
+  if (typeof r.name !== 'string' || !r.name.trim()) return null;
+  const mode = r.mode === 'light' ? 'light' : 'dark';
+  const base = THEMES[mode === 'light' ? 'light' : 'graphite'].tokens;
+  const tokens: ThemeTokens = { ...base };
+  for (const k of COLOR_KEYS) {
+    const v = r.colors?.[k];
+    if (typeof v === 'string' && COLOR.test(v.trim())) tokens[k] = v.trim();
+  }
+  if (typeof r.radius?.card === 'number' && r.radius.card >= 0 && r.radius.card <= 32) tokens.radiusCard = r.radius.card;
+  const font = (k: string) => (typeof r.font?.[k] === 'string' ? String(r.font[k]) : undefined);
+  tokens.fontUi = font('ui') ? `${font('ui')}, ${base.fontUi}` : base.fontUi;
+  tokens.fontHand = font('hand') ? `${font('hand')}, ${base.fontHand}` : base.fontHand;
+  tokens.fontMono = font('mono') ? `${font('mono')}, ${base.fontMono}` : base.fontMono;
+  const id = 'custom:' + r.name.trim().toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-');
+  return { id, name: r.name.trim(), mode, style: r.style === 'sketch' ? 'sketch' : 'clean', tokens };
+}

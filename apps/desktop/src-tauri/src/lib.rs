@@ -287,6 +287,35 @@ fn percent_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
+/// Custom themes: every *.json in <project>/.pathloom/themes and <app config>/themes (raw JSON, validated in the UI).
+#[tauri::command]
+fn themes_list(app: AppHandle, state: State<'_, AppState>) -> Vec<serde_json::Value> {
+    let mut dirs = Vec::new();
+    if let Ok(guard) = state.project.lock()
+        && let Some(p) = guard.as_ref() {
+            dirs.push(p.root.join(".pathloom").join("themes"));
+        }
+    if let Ok(dir) = app.path().app_config_dir() {
+        dirs.push(dir.join("themes"));
+    }
+    let mut out = Vec::new();
+    for dir in dirs {
+        let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+        for e in rd.flatten() {
+            let path = e.path();
+            if path.extension().is_some_and(|x| x == "json") {
+                // A theme file is small; ignore anything large or unreadable.
+                let ok_size = e.metadata().map(|m| m.len() < 64 * 1024).unwrap_or(false);
+                if let (true, Ok(text)) = (ok_size, std::fs::read_to_string(&path))
+                    && let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+                        out.push(v);
+                    }
+            }
+        }
+    }
+    out
+}
+
 #[tauri::command]
 fn proposals_list(state: State<'_, AppState>) -> CmdResult<Vec<Proposal>> {
     with_project(&state, |p| p.list_proposals())
@@ -339,6 +368,7 @@ pub fn run() {
             stage_rename,
             agent_undo,
             asset_save,
+            themes_list,
             proposals_list,
             proposal_accept,
             proposal_reject,

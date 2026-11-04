@@ -12,7 +12,7 @@ import { errorText } from '../api';
 /** Ctrl+K: search stages, tasks and boards, and run any command. */
 export function CommandPalette() {
   const { t, i18n } = useTranslation();
-  const { paletteOpen, stages, boards, theme, set, openBoard } = useApp();
+  const { paletteOpen, stages, boards, theme, customThemes, set, openBoard } = useApp();
   const keys = effectiveKeymap(useKeys((s) => s.overrides));
   if (!paletteOpen) return null;
 
@@ -53,7 +53,7 @@ export function CommandPalette() {
             <Command.Item value="open folder" onSelect={run(() => { openProject().catch((e) => set({ error: errorText(e) })); })}>{t('commands.app.openFolder')}</Command.Item>
             <Command.Item value="settings" onSelect={run(() => set({ settingsTab: 'general' }))}>{t('commands.app.settings')}</Command.Item>
             <Command.Item value="shortcuts keyboard" onSelect={run(() => set({ settingsTab: 'keys' }))}>{t('settings.shortcuts')}</Command.Item>
-            <Command.Item value="theme" onSelect={run(() => set({ theme: nextTheme(theme) }))}>{t('palette.nextTheme')}</Command.Item>
+            <Command.Item value="theme" onSelect={run(() => set({ theme: nextTheme(theme, customThemes) }))}>{t('palette.nextTheme')}</Command.Item>
             <Command.Item value="language" onSelect={run(() => setLanguage(i18n.language === 'uk' ? 'en' : 'uk'))}>{t('sidebar.language')}</Command.Item>
             {canvasCommands.map((c) => (
               <Command.Item key={c} value={`${c} ${t(`commands.${c}`)}`} onSelect={run(() => editorRef.current?.runCommand(c))}>
