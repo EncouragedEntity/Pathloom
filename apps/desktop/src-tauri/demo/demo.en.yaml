@@ -1,0 +1,53 @@
+board: roadmap
+stages:
+  - id: IDEA
+    title: Idea and requirements
+    who: me
+    tasks: [Describe what the app does, Collect references, Pick the stack]
+    tasks_done: [IDEA-01, IDEA-02, IDEA-03]
+  - id: DESIGN
+    title: Screen design
+    who: both
+    priority: high
+    depends: [IDEA]
+    tasks: [Main screen mockup, Dark theme, App icon]
+    tasks_done: [DESIGN-01]
+  - id: CORE
+    title: Core and data
+    who: ai
+    priority: high
+    branch: feat/core
+    depends: [IDEA]
+    tasks: [Data model, Save to files, Core tests]
+    tasks_done: [CORE-01]
+  - id: UI
+    title: User interface
+    who: ai
+    depends: [DESIGN, CORE]
+    tasks: [Main screen, Settings, Keyboard shortcuts]
+  - id: AGENT
+    title: Connect an AI agent
+    who: ai
+    depends: [CORE]
+    tasks: [MCP server, Agent instructions]
+  - id: BETA
+    title: Beta release
+    kind: milestone
+    depends: [UI, AGENT]
+  - id: DOCS
+    title: README and screenshots
+    who: me
+    depends: [{id: UI, soft: true}]
+    tasks: [README, Screenshots]
+frames:
+  - name: "Idea"
+    members: [IDEA]
+  - name: "Foundation"
+    members: [DESIGN, CORE]
+  - name: "Product"
+    members: [UI, AGENT]
+comments:
+  - stage: CORE
+    text: "Data model is done. Next: atomic file writes."
+  - stage: DESIGN
+    text: "Please add an icon variant on an amber background."

@@ -6,7 +6,8 @@
     "recent": "Recent",
     "noRecent": "No recent projects yet",
     "pickFolderNew": "Choose a folder for the new project",
-    "pickFolderOpen": "Choose a project folder"
+    "pickFolderOpen": "Choose a project folder",
+    "demo": "Open demo"
   },
   "sidebar": {
     "search": "Search stages and tasks",
@@ -102,7 +103,8 @@
     "ctxRename": "Rename",
     "imageBroken": "Image unavailable",
     "minimap": "Minimap",
-    "ghostBadge": "Proposed"
+    "ghostBadge": "Proposed",
+    "milestoneInputs": "{done} of {total} inputs"
   },
   "common": {
     "undo": "Undo",
@@ -209,7 +211,21 @@
       "theme": "As in theme",
       "clean": "Clean",
       "sketch": "Sketch (hand-drawn)"
-    }
+    },
+    "agents": "AI agents",
+    "copy": "Copy",
+    "agentMode": "How agent changes are applied",
+    "modeAuto": "Apply right away (you can undo from the banner)",
+    "modeReview": "Ask me first (changes arrive as proposals to accept or reject)",
+    "modeHint": "Saved in .pathloom/project.toml of «{{project}}», so it also applies to the CLI and MCP.",
+    "claudeCode": "Claude Code",
+    "claudeHint": "Run once in a terminal to give Claude Code the Pathloom tools:",
+    "pluginHint": "Or install the plugin (MCP server + planning skill) inside Claude Code:",
+    "otherClients": "Cursor and other MCP clients",
+    "otherHint": "Add this to the client's MCP config:",
+    "cli": "Command line",
+    "cliFound": "The pathloom CLI is installed next to the app:",
+    "cliMissing": "The CLI was not found next to the app (dev build). Build it with npm run build:cli."
   },
   "agent": {
     "conflict": "This board was changed outside the app while you had unsaved edits.",

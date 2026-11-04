@@ -8,7 +8,7 @@ import { type StaticMode, cacheCovers, cacheBlit, cacheMargin, lodSketch, lodDot
 import { visibleBounds, worldToScreen } from './camera';
 import { absPoints, elementCenter, type Bounds, type Point } from './geometry';
 import type { Scene } from './scene';
-import { CARD, CARD_W, edgeCurve, ellipsize, mixColors, statusColors, taskDone, withAlpha, wrapText, type CardLayout, type CardRect, type DepEdge } from './stage';
+import { CARD, CARD_W, MS, edgeCurve, isMilestone, ellipsize, mixColors, statusColors, taskDone, withAlpha, wrapText, type CardLayout, type CardRect, type DepEdge } from './stage';
 import { measureText } from './measure';
 import type { CanvasLabels } from './editor-types';
 import { execAlpha, frameHeaderRect } from './ops';
@@ -42,7 +42,7 @@ export interface Overlay {
   boxes: Bounds[];
   group: Bounds | null;
   handles: { pt: Point; round?: boolean }[];
-  haloCards: Element[];
+  haloCards: Bounds[];
   marquee: Bounds | null;
   draftShape: { tool: string; b: Bounds } | null;
   draftLine: { pts: Point[]; head: boolean } | null;
@@ -53,7 +53,7 @@ export interface Overlay {
   /** Fading glow rects (world) for highlighted cards. */
   glows: { b: Bounds; alpha: number }[];
   ghosts: { stage: StageView; el: CardElement }[];
-  ghostEdges: { a: CardRect; b: CardRect; soft: boolean }[];
+  ghostEdges: { a: CardRect; b: CardRect; soft: boolean; aMs: boolean; bMs: boolean }[];
   /** Smart-guide lines (world) shown while moving. */
   guides: Guide[];
   /** Bounds of elements the eraser has marked (dimmed preview). */
@@ -193,7 +193,7 @@ export class Renderer {
     for (const ed of s.edges) {
       const a = cardEl.get(ed.from), b = cardEl.get(ed.to);
       if (!a || !b) continue;
-      const bz = edgeCurve(a, b);
+      const bz = edgeCurve(a, b, isMilestone(s.stages.get(ed.from)), isMilestone(s.stages.get(ed.to)));
       const xs = bz.map((p) => p[0]), ys = bz.map((p) => p[1]);
       if (Math.max(...xs) < view.minX || Math.min(...xs) > view.maxX || Math.max(...ys) < view.minY || Math.min(...ys) > view.maxY) continue;
       const sel = s.selEdge?.from === ed.from && s.selEdge.to === ed.to;
@@ -575,8 +575,49 @@ export class Renderer {
     if (n > 0 && d > 0) { ctx.fillStyle = t.ok; ctx.fillRect(px, y, Math.max(4, ((W - px * 2) * d) / n), 4); }
   }
 
+  /** Milestone gate: rotated rounded square (rough polygon in sketch), title + "N of M inputs · due" below. Scale < 0.35: diamond only. */
+  private drawMilestone(ctx: CanvasRenderingContext2D, el: CardElement, s: RenderState, stage: StageView, dashed: boolean) {
+    const t = s.theme, L = s.layoutOf(stage), g = L.ms!, tiny = s.cam.scale < 0.35;
+    const cx = L.w / 2, cy = MS.cy, h = MS.half;
+    const color = stage.status === 'done' ? t.ok : stage.status === 'blocked' ? t.muted : t.warn;
+    const fill = stage.status === 'done' ? mixColors(t.ok, t.card, 0.2) : t.card;
+    ctx.translate(el.x, el.y);
+    if (s.style === 'sketch' && lodSketch(s.cam.scale) && !tiny) {
+      // status colours are baked into the rough drawable, so they are part of the cache key
+      const key = { ...el, id: `${el.id}|${color}|${fill}|${dashed}` };
+      const d = this.cachedRough(key, s, (gen) => [gen.polygon([[cx, cy - h], [cx + h, cy], [cx, cy + h], [cx - h, cy]],
+        { seed: 3, roughness: 1, bowing: 1, stroke: color, strokeWidth: 2, fill, fillStyle: 'solid', ...(dashed ? { strokeLineDash: [6, 4] } : {}) })]);
+      this.drawParts(ctx, d);
+    } else {
+      const side = (h * 2) / Math.SQRT2;
+      ctx.save();
+      ctx.translate(cx, cy); ctx.rotate(Math.PI / 4);
+      ctx.beginPath(); ctx.roundRect(-side / 2, -side / 2, side, side, 6);
+      ctx.fillStyle = tiny ? withAlpha(color, 0.5) : fill; ctx.fill();
+      ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.setLineDash(dashed ? [6, 4] : []); ctx.stroke();
+      ctx.restore();
+      ctx.setLineDash([]);
+    }
+    if (tiny) return;
+    const tsize = s.style === 'sketch' ? 18 : 13;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    if (tsize * s.cam.scale >= TEXT_MIN_PX) {
+      ctx.font = fontOf(tsize, textFamily(t, s.style), 600); ctx.fillStyle = t.text;
+      L.titleLines.forEach((ln, i) => ctx.fillText(ln, cx, L.titleY + i * L.titleLH + (L.titleLH - tsize) / 2 - 1));
+    }
+    if (11 * s.cam.scale >= TEXT_MIN_PX) {
+      const hard = stage.depends.filter((d) => !d.soft);
+      const done = hard.filter((d) => s.stages.get(d.id)?.status === 'done').length;
+      const txt = s.labels.milestoneInputs.replace('{done}', String(done)).replace('{total}', String(hard.length)) + (stage.due ? ' · ' + stage.due : '');
+      ctx.font = fontOf(11, t.fontUi); ctx.fillStyle = t.muted; ctx.textBaseline = 'middle';
+      ctx.fillText(ellipsize(txt, MS.w - 8, (x) => measureText(x, ctx.font)), cx, g.subY + MS.subH / 2);
+    }
+    ctx.textAlign = 'left';
+  }
+
   private drawCard(ctx: CanvasRenderingContext2D, el: CardElement, s: RenderState, ghost?: StageView) {
     const t = s.theme, stage = ghost ?? s.stages.get(el.ref);
+    if (stage && isMilestone(stage)) { this.drawMilestone(ctx, el, s, stage, !!ghost); return; }
     ctx.translate(el.x, el.y);
     const W = CARD_W, H = el.h, r = t.radiusCard;
     if (s.cam.scale >= 0.4) { ctx.shadowColor = 'rgba(0,0,0,0.28)'; ctx.shadowBlur = 14; ctx.shadowOffsetY = 4; }
@@ -725,7 +766,7 @@ export class Renderer {
     world();
     ctx.strokeStyle = t.accent; ctx.fillStyle = t.accent; ctx.lineWidth = 1.6; ctx.globalAlpha = 0.85;
     for (const e of o.ghostEdges) {
-      const bz = edgeCurve(e.a, e.b);
+      const bz = edgeCurve(e.a, e.b, e.aMs, e.bMs);
       ctx.setLineDash([6, 5]);
       ctx.beginPath(); ctx.moveTo(bz[0][0], bz[0][1]);
       ctx.bezierCurveTo(bz[1][0], bz[1][1], bz[2][0], bz[2][1], bz[3][0] - 6, bz[3][1]); ctx.stroke();
@@ -743,11 +784,13 @@ export class Renderer {
       world();
       ctx.translate(g.el.x, g.el.y);
       ctx.strokeStyle = t.accent; ctx.lineWidth = 2; ctx.setLineDash([8, 5]);
-      ctx.beginPath(); ctx.roundRect(0, 0, CARD_W, g.el.h, t.radiusCard); ctx.stroke(); ctx.setLineDash([]);
+      if (!isMilestone(g.stage)) { ctx.beginPath(); ctx.roundRect(0, 0, CARD_W, g.el.h, t.radiusCard); ctx.stroke(); }
+      ctx.setLineDash([]);
       ctx.font = fontOf(10, t.fontUi, 600);
       const label = s.labels.ghostBadge, bw = measureText(label, ctx.font) + 14;
-      ctx.beginPath(); ctx.roundRect(CARD.padX, -9, bw, 18, 9); ctx.fillStyle = t.accent; ctx.fill();
-      if (cam.scale >= 0.3) { ctx.fillStyle = t.onAccent; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.fillText(label, CARD.padX + 7, 0.5); }
+      const bx = isMilestone(g.stage) ? (g.el.w - bw) / 2 : CARD.padX;
+      ctx.beginPath(); ctx.roundRect(bx, -9, bw, 18, 9); ctx.fillStyle = t.accent; ctx.fill();
+      if (cam.scale >= 0.3) { ctx.fillStyle = t.onAccent; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.fillText(label, bx + 7, 0.5); }
       ctx.restore();
     }
   }
@@ -774,8 +817,8 @@ export class Renderer {
       ctx.stroke();
       ctx.restore();
     }
-    for (const el of o.haloCards) {
-      const [x, y, w, h] = rectS({ minX: el.x, minY: el.y, maxX: el.x + el.w, maxY: el.y + el.h });
+    for (const hb of o.haloCards) {
+      const [x, y, w, h] = rectS(hb);
       const r = t.radiusCard * cam.scale;
       ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.strokeStyle = withAlpha(t.accent, 0.25); ctx.lineWidth = 6; ctx.stroke();
       ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.strokeStyle = t.accent; ctx.lineWidth = 1.5; ctx.stroke();

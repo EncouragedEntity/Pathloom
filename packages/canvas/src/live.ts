@@ -1,7 +1,7 @@
 import type { Bounds } from './geometry';
 import { unionBounds } from './geometry';
 import type { Ghost, StageView } from './types';
-import { CARD_W, type CardRect } from './stage';
+import { cardW, type CardRect } from './stage';
 
 /** Pure helpers for highlights, ghost cards and live reload (unit-tested). */
 
@@ -46,11 +46,11 @@ export function ghostEdges(ghosts: Ghost[], stages: Iterable<StageView>, onBoard
   return out;
 }
 
-export const ghostRect = (g: Ghost, h: number): CardRect => ({ x: g.x, y: g.y, w: CARD_W, h });
+export const ghostRect = (g: Ghost, h: number): CardRect => ({ x: g.x, y: g.y, w: cardW(g.stage), h });
 
 /** Bounds of scene content plus ghost cards (zoomToFit). */
 export function boundsWithGhosts(base: Bounds[], ghosts: Ghost[], heightOf: (s: StageView) => number): Bounds | null {
-  return unionBounds([...base, ...ghosts.map((g) => ({ minX: g.x, minY: g.y, maxX: g.x + CARD_W, maxY: g.y + heightOf(g.stage) }))]);
+  return unionBounds([...base, ...ghosts.map((g) => ({ minX: g.x, minY: g.y, maxX: g.x + cardW(g.stage), maxY: g.y + heightOf(g.stage) }))]);
 }
 
 /** Selection to keep across setBoard(keepCamera): only ids that still exist. */

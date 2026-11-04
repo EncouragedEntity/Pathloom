@@ -52,6 +52,8 @@ export interface CanvasLabels {
   minimap: string;
   /** Badge on ghost (proposed) cards. */
   ghostBadge: string;
+  /** Milestone gate line; `{done}` and `{total}` are replaced by hard dependencies done / total. */
+  milestoneInputs: string;
 }
 
 export const DEFAULT_LABELS: CanvasLabels = {
@@ -74,6 +76,7 @@ export const DEFAULT_LABELS: CanvasLabels = {
   imageBroken: 'Image unavailable',
   minimap: 'Minimap',
   ghostBadge: 'Proposed',
+  milestoneInputs: '{done} of {total} inputs',
 };
 
 export interface EditorOptions {

@@ -6,7 +6,8 @@
     "recent": "Недавні",
     "noRecent": "Поки немає недавніх проєктів",
     "pickFolderNew": "Обери папку для нового проєкту",
-    "pickFolderOpen": "Обери папку проєкту"
+    "pickFolderOpen": "Обери папку проєкту",
+    "demo": "Відкрити демо"
   },
   "sidebar": {
     "search": "Пошук по етапах і задачах",
@@ -102,7 +103,8 @@
     "ctxRename": "Перейменувати",
     "imageBroken": "Зображення недоступне",
     "minimap": "Мінімапа",
-    "ghostBadge": "Пропозиція"
+    "ghostBadge": "Пропозиція",
+    "milestoneInputs": "{done} з {total} входів"
   },
   "common": {
     "undo": "Скасувати",
@@ -209,7 +211,21 @@
       "theme": "Як у темі",
       "clean": "Рівний (Clean)",
       "sketch": "Від руки (Sketch)"
-    }
+    },
+    "agents": "AI-агенти",
+    "copy": "Копіювати",
+    "agentMode": "Як застосовувати зміни агента",
+    "modeAuto": "Одразу (можна скасувати з банера)",
+    "modeReview": "Спершу питати мене (зміни приходять як пропозиції: прийняти або відхилити)",
+    "modeHint": "Зберігається в .pathloom/project.toml проєкту «{{project}}», тому діє і для CLI та MCP.",
+    "claudeCode": "Claude Code",
+    "claudeHint": "Виконай один раз у терміналі, щоб Claude Code отримав інструменти Pathloom:",
+    "pluginHint": "Або встанови плагін (MCP-сервер + skill для планування) прямо в Claude Code:",
+    "otherClients": "Cursor та інші MCP-клієнти",
+    "otherHint": "Додай це в MCP-конфіг клієнта:",
+    "cli": "Командний рядок",
+    "cliFound": "CLI pathloom встановлено поруч із застосунком:",
+    "cliMissing": "CLI не знайдено поруч із застосунком (dev-збірка). Збери його командою npm run build:cli."
   },
   "agent": {
     "conflict": "Цю дошку змінили поза застосунком, поки в тебе були незбережені правки.",

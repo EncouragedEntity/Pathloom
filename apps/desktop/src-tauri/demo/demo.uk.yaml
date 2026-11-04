@@ -1,0 +1,53 @@
+board: roadmap
+stages:
+  - id: IDEA
+    title: Ідея і вимоги
+    who: me
+    tasks: ["Описати, що робить застосунок", Зібрати референси, Обрати стек]
+    tasks_done: [IDEA-01, IDEA-02, IDEA-03]
+  - id: DESIGN
+    title: Дизайн екранів
+    who: both
+    priority: high
+    depends: [IDEA]
+    tasks: [Макет головного екрана, Темна тема, Іконка]
+    tasks_done: [DESIGN-01]
+  - id: CORE
+    title: Ядро і дані
+    who: ai
+    priority: high
+    branch: feat/core
+    depends: [IDEA]
+    tasks: [Модель даних, Збереження у файли, Тести ядра]
+    tasks_done: [CORE-01]
+  - id: UI
+    title: Інтерфейс
+    who: ai
+    depends: [DESIGN, CORE]
+    tasks: [Головний екран, Налаштування, Гарячі клавіші]
+  - id: AGENT
+    title: Підключити AI-агента
+    who: ai
+    depends: [CORE]
+    tasks: [MCP-сервер, Інструкція для агента]
+  - id: BETA
+    title: Бета-версія
+    kind: milestone
+    depends: [UI, AGENT]
+  - id: DOCS
+    title: README і скріншоти
+    who: me
+    depends: [{id: UI, soft: true}]
+    tasks: [README українською, README англійською]
+frames:
+  - name: "Ідея"
+    members: [IDEA]
+  - name: "Основа"
+    members: [DESIGN, CORE]
+  - name: "Продукт"
+    members: [UI, AGENT]
+comments:
+  - stage: CORE
+    text: "Модель даних готова. Далі: атомарний запис файлів."
+  - stage: DESIGN
+    text: "Додай, будь ласка, варіант іконки на бурштиновому тлі."

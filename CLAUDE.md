@@ -6,14 +6,15 @@
 
 ## Документи (читати перед роботою)
 - `docs/spec.md` — затверджена специфікація v0.1 (джерело правди).
-- `docs/m1-contracts.md`, `docs/m2-contracts.md` — API між модулями по milestone (останній — поточний).
+- `docs/m1-contracts.md` … `docs/m3-contracts.md` — API між модулями по milestone.
+- `docs/ideas.md` — що робити далі.
 - `docs/discovery.md` — журнал рішень D1–D25 і причини.
 - `docs/research.md` — бібліотеки, ліцензії, ризики.
 - `prototypes/concepts.html` — клікабельний макет (обрано концепт A).
 
 ## Структура
 - `crates/pathloom-core` — модель, формати файлів, граф залежностей, стани (Rust).
-- `crates/pathloom-cli` — бінарка `pathloom` (CLI + `mcp`), з M3.
+- `crates/pathloom-cli` — бінарка `pathloom` (CLI + `mcp`).
 - `packages/canvas` — рендер і редактор полотна (TypeScript, Canvas2D, без React).
 - `apps/desktop` — Tauri 2 застосунок (`src-tauri` Rust + `src` React).
 
@@ -25,6 +26,8 @@
 - UI-рядки — тільки через i18n (`en`, `uk`).
 
 ## Команди
-- Тести ядра: `cargo test -p pathloom-core`
+- Тести: `cargo test --workspace`; полотно: `npm run test -w @pathloom/canvas`
+- Перед першим `tauri dev`: `npm run build:cli -w @pathloom/desktop` (sidecar CLI)
+- CLI/MCP: `crates/pathloom-cli` (`pathloom`, `pathloom mcp`); плагін Claude Code: `plugin/`
 - Полотно: `npm run test -w @pathloom/canvas`, дев-стенд: `npm run dev -w @pathloom/canvas`
 - Застосунок: `npm run tauri dev -w @pathloom/desktop`

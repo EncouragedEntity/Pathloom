@@ -90,6 +90,18 @@ impl Project {
         Ok(p)
     }
 
+    /// Switches how agent changes are applied (`auto` writes files, `review` creates proposals)
+    /// and saves `.pathloom/project.toml`.
+    pub fn set_agent_changes(&mut self, mode: AgentChanges) -> Result<()> {
+        let mut config = self.config.clone();
+        config.agent_changes = mode;
+        let path = self.root.join(CONFIG);
+        let text = toml::to_string(&config).map_err(|e| parse_err(&path, e))?;
+        write_atomic(&path, text.as_bytes())?;
+        self.config = config;
+        Ok(())
+    }
+
     pub fn open(root: &Path) -> Result<Project> {
         let path = root.join(CONFIG);
         if !path.is_file() {

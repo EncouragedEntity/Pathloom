@@ -5,3 +5,4 @@ dist/
 .DS_Store
 apps/desktop/src-tauri/gen/
 .playwright-mcp/
+apps/desktop/src-tauri/binaries/

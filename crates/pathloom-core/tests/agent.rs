@@ -86,10 +86,10 @@ fn apply_creates_stages_links_tasks_frames() {
     let members: Vec<&str> =
         b.elements.iter().filter(|e| e.get("frame").and_then(Value::as_str) == Some(fid)).map(|e| e["ref"].as_str().unwrap()).collect();
     assert_eq!(members.len(), 2);
-    // frame encloses member cards with 40 padding
+    // frame encloses member cards with 24 padding (FRAME_PAD)
     let (fx, fw) = (frame["x"].as_f64().unwrap(), frame["w"].as_f64().unwrap());
-    assert_eq!(fx, m0x - 40.0);
-    assert_eq!(fw, (ax + 250.0 + 40.0) - fx);
+    assert_eq!(fx, m0x - 24.0);
+    assert_eq!(fw, (ax + 250.0 + 24.0) - fx);
     // ids look like the canvas ones, frame sits below its cards in z-order
     assert!(frame["id"].as_str().unwrap().starts_with('e') && frame["id"].as_str().unwrap().len() == 11);
     let fi = frame["index"].as_str().unwrap();

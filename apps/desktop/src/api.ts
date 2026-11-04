@@ -28,6 +28,7 @@ export interface RecentProject {
 export const api = {
   projectCreate: (path: string, name: string) => invoke<ProjectSnapshot>('project_create', { path, name }),
   projectOpen: (path: string) => invoke<ProjectSnapshot>('project_open', { path }),
+  demoOpen: (lang: string) => invoke<ProjectSnapshot>('demo_open', { lang }),
   recentProjects: () => invoke<RecentProject[]>('recent_projects'),
   boardLoad: (name: string) => invoke<Board>('board_load', { name }),
   boardSave: (name: string, board: Board) => invoke<void>('board_save', { name, board }),
@@ -43,6 +44,8 @@ export const api = {
   taskRename: (taskId: string, title: string) => invoke<StageView[]>('task_rename', { taskId, title }),
   taskRemove: (taskId: string) => invoke<StageView[]>('task_remove', { taskId }),
   subtaskAdd: (taskId: string, title: string) => invoke<StageView[]>('subtask_add', { taskId, title }),
+  agentSetup: () => invoke<{ cliPath: string | null; agentChanges: 'auto' | 'review' }>('agent_setup'),
+  setAgentChanges: (review: boolean) => invoke<void>('set_agent_changes', { review }),
   themesList: () => invoke<unknown[]>('themes_list'),
   assetSave: (name: string, bytes: number[]) => invoke<string>('asset_save', { name, bytes }),
   stageRename: (key: string, title: string) => invoke<StageView[]>('stage_rename', { key, title }),

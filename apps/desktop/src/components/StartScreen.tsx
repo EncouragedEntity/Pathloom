@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { IconFolderOpen, IconPlus, IconClock } from '@tabler/icons-react';
+import { IconFolderOpen, IconPlus, IconClock, IconSparkles } from '@tabler/icons-react';
+import { useApp } from '../store';
 import { api, errorText, type RecentProject } from '../api';
 import { createProject, openProject } from '../projectActions';
 
 export function StartScreen() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const enterProject = useApp((s) => s.enterProject);
   const [recent, setRecent] = useState<RecentProject[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -30,6 +32,7 @@ export function StartScreen() {
         <div className="start-actions">
           <button className="btn pri lg" onClick={() => run(createProject)}><IconPlus size={18} />{t('start.newProject')}</button>
           <button className="btn lg" onClick={() => run(() => openProject())}><IconFolderOpen size={18} />{t('start.openFolder')}</button>
+          <button className="btn lg" onClick={() => run(async () => enterProject(await api.demoOpen(i18n.language)))}><IconSparkles size={18} />{t('start.demo')}</button>
         </div>
         {error && <p className="err" role="alert">{error}</p>}
         <div className="sec">{t('start.recent')}</div>

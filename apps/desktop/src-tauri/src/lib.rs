@@ -7,7 +7,7 @@ mod watch;
 use std::path::Path;
 use std::sync::{LazyLock, Mutex};
 
-use pathloom_core::{ApplyReport, Board, Project, Proposal, StageMeta, StageView, Task};
+use pathloom_core::{AgentChanges, ApplyReport, Board, Project, Proposal, StageMeta, StageView, Task};
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 
@@ -77,6 +77,26 @@ fn project_create(app: AppHandle, state: State<'_, AppState>, path: String, name
 #[tauri::command]
 fn project_open(app: AppHandle, state: State<'_, AppState>, path: String) -> CmdResult<ProjectSnapshot> {
     let project = Project::open(Path::new(&path)).map_err(|e| e.to_string())?;
+    activate(&app, &state, project)
+}
+
+/// Creates (or reopens) a sample project in the app data folder, in the UI language.
+#[tauri::command]
+fn demo_open(app: AppHandle, state: State<'_, AppState>, lang: String) -> CmdResult<ProjectSnapshot> {
+    let uk = lang.starts_with("uk");
+    let dir = app.path().app_data_dir().map_err(|e| e.to_string())?.join(if uk { "demo-uk" } else { "demo-en" });
+    let project = match Project::open(&dir) {
+        Ok(p) => p,
+        Err(_) => {
+            std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+            let p = Project::init(&dir, if uk { "Демо: мій перший застосунок" } else { "Demo: my first app" }).map_err(|e| e.to_string())?;
+            let text = if uk { include_str!("../demo/demo.uk.yaml") } else { include_str!("../demo/demo.en.yaml") };
+            let spec = Project::parse_spec(text).map_err(|e| e.to_string())?;
+            let opts = pathloom_core::ApplyOptions { dry_run: false, author: "agent:claude".into() };
+            p.apply(&spec, &opts).map_err(|e| e.to_string())?;
+            p
+        }
+    };
     activate(&app, &state, project)
 }
 
@@ -316,6 +336,42 @@ fn themes_list(app: AppHandle, state: State<'_, AppState>) -> Vec<serde_json::Va
     out
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AgentSetup {
+    /// Absolute path of the bundled `pathloom` CLI (next to the app executable), if present.
+    cli_path: Option<String>,
+    /// "auto" or "review" for the open project.
+    agent_changes: String,
+}
+
+#[tauri::command]
+fn agent_setup(state: State<'_, AppState>) -> AgentSetup {
+    let exe = if cfg!(windows) { "pathloom.exe" } else { "pathloom" };
+    let cli_path = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.join(exe)))
+        .filter(|p| p.is_file())
+        .map(|p| p.display().to_string());
+    let agent_changes = state
+        .project
+        .lock()
+        .ok()
+        .and_then(|g| g.as_ref().map(|p| p.config.agent_changes))
+        .map_or("auto", |m| if m == AgentChanges::Review { "review" } else { "auto" })
+        .to_string();
+    AgentSetup { cli_path, agent_changes }
+}
+
+#[tauri::command]
+fn set_agent_changes(state: State<'_, AppState>, review: bool) -> CmdResult<()> {
+    let mut guard = state.project.lock().map_err(|_| "internal state poisoned".to_string())?;
+    let project = guard.as_mut().ok_or_else(|| "no project is open".to_string())?;
+    project
+        .set_agent_changes(if review { AgentChanges::Review } else { AgentChanges::Auto })
+        .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn proposals_list(state: State<'_, AppState>) -> CmdResult<Vec<Proposal>> {
     with_project(&state, |p| p.list_proposals())
@@ -357,6 +413,7 @@ pub fn run() {
             project_create,
             project_open,
             recent_projects,
+            demo_open,
             board_load,
             board_save,
             board_create,
@@ -369,6 +426,8 @@ pub fn run() {
             agent_undo,
             asset_save,
             themes_list,
+            agent_setup,
+            set_agent_changes,
             proposals_list,
             proposal_accept,
             proposal_reject,

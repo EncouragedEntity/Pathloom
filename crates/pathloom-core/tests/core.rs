@@ -349,3 +349,12 @@ fn add_subtask_letters_and_parent_reopens() {
     let reread = p.load_stage("SB").unwrap();
     assert_eq!(reread.tasks[0].sub.len(), 2);
 }
+
+#[test]
+fn set_agent_changes_persists() {
+    let (d, mut p) = project();
+    p.set_agent_changes(AgentChanges::Review).unwrap();
+    let reopened = Project::open(d.path()).unwrap();
+    assert_eq!(reopened.config.agent_changes, AgentChanges::Review);
+    assert!(std::fs::read_to_string(d.path().join(".pathloom/project.toml")).unwrap().contains("agent_changes = \"review\""));
+}

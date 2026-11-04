@@ -129,6 +129,7 @@ export function CanvasView() {
         imageBroken: t('canvas.imageBroken'),
         minimap: t('canvas.minimap'),
         ghostBadge: t('canvas.ghostBadge'),
+        milestoneInputs: t('canvas.milestoneInputs'),
       },
     });
     editorRef.current = editor;

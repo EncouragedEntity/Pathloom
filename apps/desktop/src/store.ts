@@ -27,7 +27,7 @@ interface AppStore {
   snap: boolean;
   minimap: boolean;
   exec: boolean;
-  settingsTab: 'general' | 'keys' | null;
+  settingsTab: 'general' | 'keys' | 'agents' | null;
   proposals: Proposal[];
   agentChange: { group: number; stages: string[]; boards: string[]; at: number } | null;
   boardConflict: boolean;

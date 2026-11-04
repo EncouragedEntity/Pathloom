@@ -11,7 +11,7 @@ import {
 import { newId, newSeed } from './id';
 import { keyAfter, keyBetween } from './index-key';
 import { computeFrames, execToolAllowed, frameHeaderRect, frameMembers, frameProgress, planRemoveStageCards, reorderKeys, unboundArrows } from './ops';
-import { CARD, CARD_W, MISSING_H, cardLayout, edgeCurve, extractEdges, hitCheckbox, statusColors, taskDone, type CardLayout, type DepEdge } from './stage';
+import { CARD, CARD_W, MISSING_H, cardLayout, cardW, edgeCurve, extractEdges, hitCheckbox, isMilestone, milestoneBounds, milestoneHit, statusColors, taskDone, type CardLayout, type DepEdge } from './stage';
 import { clearMeasureCache, measureText } from './measure';
 import { Renderer, type Overlay, type RenderState } from './render';
 import { STATIC_CACHE } from './lod';
@@ -339,7 +339,7 @@ class EditorImpl implements Editor {
     const cur = this.scene.get(el.id);
     if (!cur) return;
     this.act(() => {
-      const card: CardElement = { id: newId(), type: 'card', ref: view.key, x: cur.x, y: cur.y, w: CARD_W, h: this.layoutOf(view).h, index: cur.index };
+      const card: CardElement = { id: newId(), type: 'card', ref: view.key, x: cur.x, y: cur.y, w: cardW(view), h: this.layoutOf(view).h, index: cur.index };
       this.del(cur.id);
       this.put(card);
       for (const o of [...this.scene.all()]) {
@@ -380,8 +380,9 @@ class EditorImpl implements Editor {
   private layoutOf = (s: StageView): CardLayout => {
     let l = this.layouts.get(s);
     if (!l) {
-      const font = this.titleFont();
-      l = cardLayout(s, (t) => measureText(t, font), this.style === 'sketch' ? 27 : 20);
+      const ms = isMilestone(s), sk = this.style === 'sketch';
+      const font = ms ? `600 ${sk ? 18 : 13}px ${sk ? this.theme.fontHand : this.theme.fontUi}` : this.titleFont();
+      l = cardLayout(s, (t) => measureText(t, font), ms ? (sk ? 21 : 16) : sk ? 27 : 20);
       this.layouts.set(s, l);
     }
     return l;
@@ -406,8 +407,8 @@ class EditorImpl implements Editor {
     for (const el of this.scene.all()) {
       if (el.type !== 'card') continue;
       const st = this.stages.get((el as CardElement).ref);
-      const h = st ? this.layoutOf(st).h : MISSING_H;
-      if (el.h !== h || el.w !== CARD_W) { this.scene.set({ ...el, w: CARD_W, h }); changed.add(el.id); }
+      const L = st && this.layoutOf(st), h = L ? L.h : MISSING_H, w = L ? L.w : CARD_W;
+      if (el.h !== h || el.w !== w) { this.scene.set({ ...el, x: el.x + (el.w - w) / 2, w, h }); changed.add(el.id); } // keep the centre when the width changes
     }
     if (changed.size) { this.reroute(changed); if (emit) this.emitBoard(); }
   }
@@ -549,7 +550,7 @@ class EditorImpl implements Editor {
   /** Topmost element under `p`. Frames only react on their border or header strip, and only after everything else. */
   private hitAt(p: Point): Element | null {
     const tol = this.tol();
-    const top = this.scene.hit(p, tol, (e) => e.type !== 'frame' && (!this.exec || e.type === 'card'));
+    const top = this.scene.hit(p, tol, (e) => e.type !== 'frame' && (!this.exec || e.type === 'card') && (e.type !== 'card' || this.cardHit(e as CardElement, p, tol)));
     if (top || this.exec) return top;
     const { frames } = this.frameInfo();
     if (!frames.length) return null;
@@ -603,7 +604,7 @@ class EditorImpl implements Editor {
     for (const ed of edges) {
       const a = cards.get(ed.from), b = cards.get(ed.to);
       if (!a || !b) continue;
-      const d = distToBezier(p, edgeCurve(a, b));
+      const d = distToBezier(p, edgeCurve(a, b, isMilestone(this.stages.get(ed.from)), isMilestone(this.stages.get(ed.to))));
       if (d < bd) { bd = d; best = ed; }
     }
     return best;
@@ -637,6 +638,18 @@ class EditorImpl implements Editor {
       if (Math.hypot(s[0] - screen[0], s[1] - screen[1]) <= 8) return h;
     }
     return null;
+  }
+
+  /** Milestone gates react only on the diamond and its label, not on the whole box. */
+  private cardHit(c: CardElement, p: Point, tol: number): boolean {
+    const st = this.stages.get(c.ref);
+    return !isMilestone(st) || milestoneHit(p[0] - c.x, p[1] - c.y, c.w, this.layoutOf(st!).ms!, tol);
+  }
+
+  /** Bounds the highlight/selection follows: the whole box, or diamond + label for milestones. */
+  private cardBounds(c: CardElement): Bounds {
+    const st = this.stages.get(c.ref);
+    return isMilestone(st) ? milestoneBounds(c, this.layoutOf(st!).ms!) : { minX: c.x, minY: c.y, maxX: c.x + c.w, maxY: c.y + c.h };
   }
 
   private checkboxAt(el: Element, p: Point): string | null {
@@ -1061,7 +1074,7 @@ class EditorImpl implements Editor {
     this.stages.set(view.key, view); this.stagesRev++;
     let id = '';
     this.act(() => {
-      const card: CardElement = { id: newId(), type: 'card', ref: view.key, x: w[0], y: w[1], w: CARD_W, h: this.layoutOf(view).h, index: this.nextIndex() };
+      const card: CardElement = { id: newId(), type: 'card', ref: view.key, x: w[0], y: w[1], w: cardW(view), h: this.layoutOf(view).h, index: this.nextIndex() };
       id = card.id;
       this.put(card);
     });
@@ -1717,17 +1730,18 @@ class EditorImpl implements Editor {
     const glows: Overlay['glows'] = [];
     for (const [key, h] of this.hl) {
       const c = cards.get(key);
-      if (c) glows.push({ b: { minX: c.x, minY: c.y, maxX: c.x + c.w, maxY: c.y + c.h }, alpha: highlightAlpha(h, now) });
+      if (c) glows.push({ b: this.cardBounds(c), alpha: highlightAlpha(h, now) });
     }
-    const gs = this.ghosts.map((g) => ({ stage: g.stage, el: { id: 'ghost:' + g.stage.key, type: 'card', ref: g.stage.key, x: g.x, y: g.y, w: CARD_W, h: this.layoutOf(g.stage).h, index: '' } as CardElement }));
+    const gs = this.ghosts.map((g) => ({ stage: g.stage, el: { id: 'ghost:' + g.stage.key, type: 'card', ref: g.stage.key, x: g.x, y: g.y, w: cardW(g.stage), h: this.layoutOf(g.stage).h, index: '' } as CardElement }));
     const rects = new Map<string, { x: number; y: number; w: number; h: number }>();
     for (const [k, c] of cards) rects.set(k, c);
     for (const g of gs) rects.set(g.stage.key, g.el);
     const edges: Overlay['ghostEdges'] = [];
+    const gk = new Map(gs.map((g) => [g.stage.key, g.stage]));
     if (gs.length) {
       for (const e of ghostEdges(this.ghosts, this.stages.values(), new Set(cards.keys()))) {
         const a = rects.get(e.from), b = rects.get(e.to);
-        if (a && b) edges.push({ a, b, soft: e.soft });
+        if (a && b) edges.push({ a, b, soft: e.soft, aMs: isMilestone(gk.get(e.from) ?? this.stages.get(e.from)), bMs: isMilestone(gk.get(e.to) ?? this.stages.get(e.to)) });
       }
     }
     return { glows, ghosts: gs, ghostEdges: edges };
@@ -1741,7 +1755,7 @@ class EditorImpl implements Editor {
       boxes: els.length > 1 || (els.length === 1 && isPointy(els[0])) ? others.map(elementBounds) : others.length === 1 ? [elementBounds(others[0])] : [],
       group: els.length > 1 ? unionBounds(els.map(elementBounds)) : null,
       handles: this.handlePoints().map((h) => ({ pt: h.pt, round: h.round })),
-      haloCards: cards,
+      haloCards: cards.map((c) => this.cardBounds(c as CardElement)),
       locks: els.filter((e) => e.locked).map((e) => { const b = elementBounds(e); return [b.maxX, b.minY] as Point; }),
       marquee: null, draftShape: null, draftLine: null, draftPencil: null, bindTarget: null, guides: [], erase: [],
       ...this.liveOverlay(),

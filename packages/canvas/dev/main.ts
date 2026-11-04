@@ -16,7 +16,7 @@ const paper: ThemeTokens = {
 };
 
 // ---- mock stage store (status per spec section 5) ------------------------------------------
-interface RawStage { key: string; title: string; who: 'me' | 'ai' | 'both'; due: string | null; priority: 'low' | 'med' | 'high'; branch: string | null; depends: { id: string; soft: boolean }[]; tasks: Task[] }
+interface RawStage { kind?: 'milestone'; key: string; title: string; who: 'me' | 'ai' | 'both'; due: string | null; priority: 'low' | 'med' | 'high'; branch: string | null; depends: { id: string; soft: boolean }[]; tasks: Task[] }
 const t = (id: string, title: string, done = false): Task => ({ id, title, done, sub: [] });
 const raw: RawStage[] = [
   { key: 'S0', title: 'Owner: repo and environment', who: 'me', due: 'Nov 6', priority: 'high', branch: null, depends: [], tasks: [t('S0-01', 'Create the GitHub repo', true), t('S0-02', 'Install Rust and Node', true), t('S0-03', 'Ubuntu in WSL for Linux tests', true)] },
@@ -25,7 +25,8 @@ const raw: RawStage[] = [
   { key: 'M2', title: 'pathloom CLI', who: 'ai', due: 'Nov 21', priority: 'med', branch: null, depends: [{ id: 'M0', soft: false }], tasks: [t('M2-01', 'pathloom init'), t('M2-02', 'stage add / task done'), t('M2-03', 'pathloom next'), t('M2-04', 'pathloom validate')] },
   { key: 'M3', title: "Stage cards and links", who: 'ai', due: 'Dec 5', priority: 'high', branch: null, depends: [{ id: 'M1', soft: false }], tasks: [t('M3-01', 'Stage card'), t('M3-02', 'Task IDs inside the card'), t('M3-03', 'Arrow between cards = dependency')] },
   { key: 'M4', title: 'MCP server and skill', who: 'ai', due: 'Dec 10', priority: 'high', branch: null, depends: [{ id: 'M2', soft: false }, { id: 'M3', soft: true }], tasks: [t('M4-01', 'rmcp stdio server'), t('M4-02', 'Batch apply spec'), t('M4-03', 'Skill for Claude Code'), t('M4-04', 'Live reload in the app')] },
-  { key: 'M5', title: 'Installers and CI', who: 'both', due: 'Dec 19', priority: 'med', branch: null, depends: [{ id: 'M4', soft: false }], tasks: [t('M5-01', 'Make the repo public'), t('M5-02', 'GitHub Actions: Win / macOS / Linux'), t('M5-03', 'Test on a friend\'s Linux box')] },
+  { kind: 'milestone', key: 'G0', title: 'MVP demo', who: 'me', due: 'Dec 12', priority: 'med', branch: null, depends: [{ id: 'M3', soft: false }, { id: 'M4', soft: false }], tasks: [] },
+  { key: 'M5', title: 'Installers and CI', who: 'both', due: 'Dec 19', priority: 'med', branch: null, depends: [{ id: 'M4', soft: false }, { id: 'G0', soft: false }], tasks: [t('M5-01', 'Make the repo public'), t('M5-02', 'GitHub Actions: Win / macOS / Linux'), t('M5-03', 'Test on a friend\'s Linux box')] },
   { key: 'M6', title: 'Public release 0.1', who: 'me', due: 'Dec 26', priority: 'med', branch: null, depends: [{ id: 'M5', soft: false }], tasks: [t('M6-01', 'README and screenshots'), t('M6-02', 'FUNDING.yml'), t('M6-03', 'Announcement post')] },
 ];
 
@@ -35,9 +36,10 @@ function views(): StageView[] {
   const status = new Map<string, StageStatus>();
   const compute = (k: string): StageStatus => {
     const cached = status.get(k); if (cached) return cached;
-    const s = raw.find((r) => r.key === k)!;
-    const done = s.tasks.filter(taskDone).length;
     let st: StageStatus;
+    const s = raw.find((r) => r.key === k)!;
+    if (s.kind) { st = s.depends.every((d) => d.soft || compute(d.id) === 'done') ? 'done' : 'blocked'; status.set(k, st); return st; }
+    const done = s.tasks.filter(taskDone).length;
     if (s.tasks.length && done === s.tasks.length) st = 'done';
     else if (s.depends.some((d) => !d.soft && compute(d.id) !== 'done')) st = 'blocked';
     else st = done > 0 ? 'active' : 'ready';
@@ -45,7 +47,7 @@ function views(): StageView[] {
     return st;
   };
   return raw.map((s) => ({
-    key: s.key, title: s.title, kind: 'stage', who: s.who, due: s.due, priority: s.priority, branch: s.branch, pr: null, tags: [],
+    key: s.key, title: s.title, kind: s.kind ?? 'stage', who: s.who, due: s.due, priority: s.priority, branch: s.branch, pr: null, tags: [],
     depends: s.depends, description: '', tasks: s.tasks, comments: [], status: compute(s.key),
     progress: [s.tasks.filter(taskDone).length, s.tasks.length],
   }));
@@ -64,7 +66,7 @@ let seed = 7;
 const card = (ref: string, x: number, y: number): Element => ({ id: 'c' + ref, type: 'card', ref, x, y, w: 250, h: 200, index: next() });
 const sampleElements: Element[] = [
   { id: 'fr1', type: 'frame', name: 'Phase 1 · Foundation', x: 30, y: 80, w: 620, h: 420, index: next() } as Element,
-  card('S0', 60, 120), card('M0', 360, 120), card('M1', 700, 40), card('M2', 700, 420), card('M3', 1010, 40), card('M4', 1010, 420), card('M5', 1350, 220), card('M6', 1660, 220),
+  card('S0', 60, 120), card('M0', 360, 120), card('M1', 700, 40), card('M2', 700, 420), card('M3', 1010, 40), card('M4', 1010, 420), card('G0', 1300, 250), card('M5', 1560, 220), card('M6', 1870, 220),
   { id: 'r1', type: 'rect', x: 60, y: 640, w: 160, h: 80, text: 'Idea: plugins', index: next(), seed: seed++, ...base } as Element,
   { id: 'e1', type: 'ellipse', x: 330, y: 620, w: 150, h: 110, text: 'Agents', index: next(), seed: seed++, ...base } as Element,
   { id: 'd1', type: 'diamond', x: 600, y: 630, w: 130, h: 100, text: 'Ship?', index: next(), seed: seed++, ...base } as Element,

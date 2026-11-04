@@ -14,7 +14,8 @@ pub(crate) const X_STEP: f64 = 320.0;
 pub(crate) const Y_STEP: f64 = 220.0;
 pub(crate) const CARD_W: f64 = 250.0;
 pub(crate) const CARD_H: f64 = 140.0;
-pub(crate) const FRAME_PAD: f64 = 40.0;
+/// Must stay below half the gap between layout columns (X_STEP - CARD_W = 70) so neighbouring frames never overlap.
+pub(crate) const FRAME_PAD: f64 = 24.0;
 const GAP: f64 = 20.0;
 
 pub(crate) type El = Map<String, Value>;

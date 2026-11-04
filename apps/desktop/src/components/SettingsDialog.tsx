@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { IconX, IconRotate, IconAlertTriangle, IconKeyboard, IconAdjustments, IconPlus } from '@tabler/icons-react';
+import { IconX, IconRotate, IconAlertTriangle, IconKeyboard, IconAdjustments, IconPlus, IconSparkles, IconCopy, IconCheck } from '@tabler/icons-react';
+import { api, errorText } from '../api';
 import { useApp } from '../store';
 import { allThemes } from '../theme';
 import { setLanguage } from '../i18n';
@@ -136,6 +137,54 @@ function General() {
   );
 }
 
+function CopyLine({ text }: { text: string }) {
+  const { t } = useTranslation();
+  const [done, setDone] = useState(false);
+  return (
+    <div className="copy-line">
+      <code>{text}</code>
+      <button className="icon-btn" title={t('settings.copy')} aria-label={t('settings.copy')} onClick={() => { void navigator.clipboard.writeText(text).then(() => { setDone(true); setTimeout(() => setDone(false), 1500); }); }}>
+        {done ? <IconCheck size={14} /> : <IconCopy size={14} />}
+      </button>
+    </div>
+  );
+}
+
+/** How to connect AI agents: review mode, CLI path, MCP config for Claude Code and other clients. */
+function Agents() {
+  const { t } = useTranslation();
+  const { project, set } = useApp();
+  const [setup, setSetup] = useState<{ cliPath: string | null; agentChanges: 'auto' | 'review' } | null>(null);
+  useEffect(() => { api.agentSetup().then(setSetup).catch(() => setSetup({ cliPath: null, agentChanges: 'auto' })); }, []);
+  if (!setup) return null;
+  const cli = setup.cliPath ? (setup.cliPath.includes(' ') ? '"' + setup.cliPath + '"' : setup.cliPath) : 'pathloom';
+  const json = JSON.stringify({ mcpServers: { pathloom: { command: setup.cliPath ?? 'pathloom', args: ['mcp'] } } }, null, 2);
+  const toggle = (review: boolean) => api.setAgentChanges(review)
+    .then(() => setSetup({ ...setup, agentChanges: review ? 'review' : 'auto' }))
+    .catch((e) => set({ error: errorText(e) }));
+  return (
+    <div className="agents">
+      <h3>{t('settings.agentMode')}</h3>
+      <label className="radio"><input type="radio" checked={setup.agentChanges === 'auto'} onChange={() => void toggle(false)} />{t('settings.modeAuto')}</label>
+      <label className="radio"><input type="radio" checked={setup.agentChanges === 'review'} onChange={() => void toggle(true)} />{t('settings.modeReview')}</label>
+      <p className="hint">{t('settings.modeHint', { project: project?.name ?? '' })}</p>
+      <h3>{t('settings.claudeCode')}</h3>
+      <p className="hint">{t('settings.claudeHint')}</p>
+      <CopyLine text={'claude mcp add pathloom -- ' + cli + ' mcp'} />
+      <p className="hint">{t('settings.pluginHint')}</p>
+      <CopyLine text="/plugin marketplace add XxArDy/Pathloom" />
+      <CopyLine text="/plugin install pathloom@pathloom" />
+      <h3>{t('settings.otherClients')}</h3>
+      <p className="hint">{t('settings.otherHint')}</p>
+      <pre className="code">{json}</pre>
+      <h3>{t('settings.cli')}</h3>
+      <p className="hint">{setup.cliPath ? t('settings.cliFound') : t('settings.cliMissing')}</p>
+      {setup.cliPath && <CopyLine text={setup.cliPath} />}
+      <CopyLine text={cli + ' next'} />
+    </div>
+  );
+}
+
 export function SettingsDialog() {
   const { t } = useTranslation();
   const { settingsTab, set } = useApp();
@@ -156,10 +205,11 @@ export function SettingsDialog() {
           <div className="i-tabs" role="tablist">
             <button role="tab" aria-selected={settingsTab === 'general'} className={settingsTab === 'general' ? 'on' : ''} onClick={() => set({ settingsTab: 'general' })}><IconAdjustments size={14} />{t('settings.general')}</button>
             <button role="tab" aria-selected={settingsTab === 'keys'} className={settingsTab === 'keys' ? 'on' : ''} onClick={() => set({ settingsTab: 'keys' })}><IconKeyboard size={14} />{t('settings.shortcuts')}</button>
+            <button role="tab" aria-selected={settingsTab === 'agents'} className={settingsTab === 'agents' ? 'on' : ''} onClick={() => set({ settingsTab: 'agents' })}><IconSparkles size={14} />{t('settings.agents')}</button>
           </div>
           <button className="icon-btn push" aria-label={t('inspector.close')} onClick={close}><IconX size={16} /></button>
         </div>
-        <div className="modal-body">{settingsTab === 'general' ? <General /> : <Shortcuts />}</div>
+        <div className="modal-body">{settingsTab === 'general' ? <General /> : settingsTab === 'keys' ? <Shortcuts /> : <Agents />}</div>
       </div>
     </div>
   );
