@@ -1,9 +1,11 @@
 export type CanvasCommand =
   | 'tool.select' | 'tool.hand' | 'tool.rect' | 'tool.diamond' | 'tool.ellipse' | 'tool.arrow' | 'tool.line'
-  | 'tool.pencil' | 'tool.text' | 'tool.frame' | 'tool.stage'
+  | 'tool.pencil' | 'tool.text' | 'tool.frame' | 'tool.stage' | 'tool.sticky' | 'tool.image' | 'tool.eraser'
   | 'edit.undo' | 'edit.redo' | 'edit.delete' | 'edit.duplicate' | 'edit.copy' | 'edit.paste' | 'edit.selectAll'
   | 'edit.convertToStage' | 'arrange.front' | 'arrange.back' | 'edit.toggleLock'
-  | 'view.zoomIn' | 'view.zoomOut' | 'view.fit' | 'view.zoom100' | 'edit.cancel';
+  | 'edit.group' | 'edit.ungroup'
+  | 'align.left' | 'align.center' | 'align.right' | 'align.top' | 'align.middle' | 'align.bottom' | 'distribute.h' | 'distribute.v'
+  | 'view.zoomIn' | 'view.zoomOut' | 'view.fit' | 'view.zoom100' | 'view.toggleSnap' | 'edit.cancel';
 
 /** Each string is one chord; several chords are alternatives. Format: `Mod+Alt+Shift+<KeyboardEvent.code>`. */
 export type Keymap = Record<CanvasCommand, string[]>;
@@ -20,6 +22,9 @@ export const DEFAULT_CANVAS_KEYMAP: Keymap = {
   'tool.text': ['Digit7'],
   'tool.frame': ['KeyF'],
   'tool.stage': ['KeyS'],
+  'tool.sticky': ['Digit9'],
+  'tool.image': ['Digit8'],
+  'tool.eraser': ['Digit0'],
   'edit.undo': ['Mod+KeyZ'],
   'edit.redo': ['Mod+Shift+KeyZ', 'Mod+KeyY'],
   'edit.delete': ['Delete', 'Backspace'],
@@ -31,10 +36,16 @@ export const DEFAULT_CANVAS_KEYMAP: Keymap = {
   'arrange.front': ['Mod+BracketRight'],
   'arrange.back': ['Mod+BracketLeft'],
   'edit.toggleLock': ['Mod+Shift+KeyL'],
+  'edit.group': ['Mod+KeyG'],
+  'edit.ungroup': ['Mod+Shift+KeyG'],
+  // Align / distribute have no default chord: listed so a settings UI can offer them.
+  'align.left': [], 'align.center': [], 'align.right': [], 'align.top': [], 'align.middle': [], 'align.bottom': [],
+  'distribute.h': [], 'distribute.v': [],
   'view.zoomIn': ['Mod+Equal', 'Mod+Shift+Equal', 'Mod+NumpadAdd'],
   'view.zoomOut': ['Mod+Minus', 'Mod+NumpadSubtract'],
   'view.fit': ['Shift+Digit1'],
   'view.zoom100': ['Shift+Digit0'],
+  'view.toggleSnap': ['Mod+Quote'],
   'edit.cancel': ['Escape'],
 };
 

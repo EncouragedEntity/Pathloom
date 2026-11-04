@@ -2,16 +2,18 @@ import rough from 'roughjs';
 import type { RoughCanvas } from 'roughjs/bin/canvas';
 import type { Drawable, Options } from 'roughjs/bin/core';
 import getStroke from 'perfect-freehand';
-import type { CardElement, Element, FreedrawElement, LinearElement, ShapeElement, StageView, TextElement, ThemeTokens } from './types';
+import type { CardElement, Element, FreedrawElement, ImageElement, LinearElement, ShapeElement, StageView, TextElement, ThemeTokens } from './types';
 import type { Camera } from './camera';
 import { type StaticMode, cacheCovers, cacheBlit, cacheMargin, lodSketch, lodDot, lodTextPx, TEXT_MIN_PX } from './lod';
 import { visibleBounds, worldToScreen } from './camera';
 import { absPoints, elementCenter, type Bounds, type Point } from './geometry';
 import type { Scene } from './scene';
-import { CARD, CARD_W, edgeCurve, ellipsize, mixColors, statusColors, taskDone, withAlpha, wrapText, type CardLayout, type DepEdge } from './stage';
+import { CARD, CARD_W, edgeCurve, ellipsize, mixColors, statusColors, taskDone, withAlpha, wrapText, type CardLayout, type CardRect, type DepEdge } from './stage';
 import { measureText } from './measure';
 import type { CanvasLabels } from './editor-types';
 import { execAlpha, frameHeaderRect } from './ops';
+import { STICKY_PAD, wrapLines, type Guide } from './arrange';
+import type { ImageCache } from './media';
 
 export interface RenderState {
   cam: Camera;
@@ -33,6 +35,7 @@ export interface RenderState {
   exec: boolean;
   /** done/total card members per frame id. */
   frameStats: ReadonlyMap<string, { done: number; total: number }>;
+  images: ImageCache;
 }
 
 export interface Overlay {
@@ -47,6 +50,14 @@ export interface Overlay {
   bindTarget: Element | null;
   /** World points (top-right of the bounds) where a lock glyph is drawn for selected locked elements. */
   locks: Point[];
+  /** Fading glow rects (world) for highlighted cards. */
+  glows: { b: Bounds; alpha: number }[];
+  ghosts: { stage: StageView; el: CardElement }[];
+  ghostEdges: { a: CardRect; b: CardRect; soft: boolean }[];
+  /** Smart-guide lines (world) shown while moving. */
+  guides: Guide[];
+  /** Bounds of elements the eraser has marked (dimmed preview). */
+  erase: Bounds[];
 }
 
 /** A roughjs drawable flattened to Path2D parts, so redraws skip op-by-op replay. */
@@ -226,6 +237,7 @@ export class Renderer {
       case 'text': this.drawText(ctx, el as TextElement, s); break;
       case 'line': case 'arrow': this.drawLinear(ctx, el as LinearElement, s); break;
       case 'freedraw': this.drawFree(ctx, el as FreedrawElement, s); break;
+      case 'image': this.drawImage(ctx, el as ImageElement, s); break;
       case 'card': this.drawCard(ctx, el as CardElement, s); break;
       case 'frame': this.drawFrame(ctx, el, s); break;
       default: this.drawPlaceholder(ctx, el, s);
@@ -287,7 +299,7 @@ export class Renderer {
     const t = s.theme;
     this.rotateTo(ctx, el);
     ctx.translate(el.x, el.y);
-    const fill = this.shapeFill(el, t);
+    const fill = this.shapeFill(el, t), sticky = el.type === 'sticky';
     if (s.style === 'sketch' && lodSketch(s.cam.scale)) {
       const d = this.cachedRough(el, s, (g) => {
         const o = this.roughOpts(el, s, fill);
@@ -301,15 +313,68 @@ export class Renderer {
       if (el.type === 'ellipse') ctx.ellipse(el.w / 2, el.h / 2, Math.abs(el.w / 2), Math.abs(el.h / 2), 0, 0, Math.PI * 2);
       else if (el.type === 'diamond') { ctx.moveTo(el.w / 2, 0); ctx.lineTo(el.w, el.h / 2); ctx.lineTo(el.w / 2, el.h); ctx.lineTo(0, el.h / 2); ctx.closePath(); }
       else ctx.roundRect(0, 0, el.w, el.h, Math.min(8, el.w / 4, el.h / 4));
-      if (fill) { ctx.fillStyle = fill; ctx.fill(); }
-      ctx.strokeStyle = el.stroke ?? t.text2;
-      ctx.lineWidth = el.strokeWidth ?? 1.5;
+      if (fill) {
+        ctx.fillStyle = fill;
+        if (sticky && s.cam.scale >= 0.4) { ctx.shadowColor = 'rgba(0,0,0,0.3)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 3; }
+        ctx.fill();
+        ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+      }
+      ctx.strokeStyle = el.stroke ?? (sticky ? withAlpha(t.text2, 0.3) : t.text2);
+      ctx.lineWidth = sticky ? 1 : el.strokeWidth ?? 1.5;
       ctx.setLineDash(dashOf(el.strokeStyle, ctx.lineWidth));
       ctx.stroke();
     }
-    if (el.text && s.editingId !== el.id) {
+    if (el.text && s.editingId !== el.id && sticky) {
+      ctx.setLineDash([]);
+      const size = el.fontSize ?? 18;
+      const lines = lodTextPx(size, s.cam.scale) ? el.text.split('\n') : this.stickyLines(el.text, size, textFamily(t, s.style), el.w - STICKY_PAD * 2);
+      this.drawLabel(ctx, lines.join('\n'), STICKY_PAD, STICKY_PAD, size, s, 'left', false, el.w - STICKY_PAD * 2);
+    } else if (el.text && s.editingId !== el.id) {
       ctx.setLineDash([]);
       this.drawLabel(ctx, el.text, el.w / 2, el.h / 2, el.fontSize ?? 18, s, 'center', true, el.w * 0.8);
+    }
+  }
+
+  /** Wrapped sticky text (cached per font/width/text). Line height is the shared 1.25. */
+  private stickyLines(text: string, size: number, family: string, maxW: number): string[] {
+    const font = fontOf(size, family), key = `s|${font}|${maxW}|${text}`;
+    let v = this.wrapCache.get(key);
+    if (!v) {
+      v = wrapLines(text, maxW, (x) => measureText(x, font));
+      if (this.wrapCache.size > 5000) this.wrapCache.clear();
+      this.wrapCache.set(key, v);
+    }
+    return v;
+  }
+
+  private drawImage(ctx: CanvasRenderingContext2D, el: ImageElement, s: RenderState) {
+    const t = s.theme, e = s.images.get(el.asset);
+    this.rotateTo(ctx, el);
+    if (e.status === 'ready' && e.img) {
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(e.img, el.x, el.y, el.w, el.h);
+      return;
+    }
+    // placeholder while loading / after an error
+    const err = e.status === 'error';
+    ctx.beginPath(); ctx.roundRect(el.x, el.y, el.w, el.h, 6);
+    ctx.fillStyle = withAlpha(t.card2, 0.7); ctx.fill();
+    ctx.strokeStyle = err ? t.bad : t.border2; ctx.lineWidth = 1; ctx.setLineDash([5, 4]); ctx.stroke(); ctx.setLineDash([]);
+    const m = Math.min(el.w, el.h);
+    if (m * s.cam.scale < 14) return;
+    const k = Math.min(m * 0.4, 48 / s.cam.scale), cx = el.x + el.w / 2, cy = el.y + el.h / 2 - (err ? k * 0.2 : 0);
+    ctx.save();
+    ctx.translate(cx - k / 2, cy - k / 2); ctx.scale(k / 24, k / 24);
+    ctx.strokeStyle = err ? t.bad : t.muted; ctx.lineWidth = 1.5 / ((k / 24) * s.cam.scale); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath(); ctx.roundRect(2, 3, 20, 18, 3);
+    ctx.moveTo(2, 17); ctx.lineTo(8, 11); ctx.lineTo(13, 16); ctx.lineTo(16, 13); ctx.lineTo(22, 19);
+    ctx.moveTo(15.5, 8); ctx.arc(14.5, 8, 1.2, 0, Math.PI * 2);
+    if (err) { ctx.moveTo(3, 3); ctx.lineTo(21, 21); }
+    ctx.stroke();
+    ctx.restore();
+    if (err && m * s.cam.scale >= 60) {
+      ctx.font = fontOf(12 / Math.max(s.cam.scale, 0.6), t.fontUi); ctx.fillStyle = t.muted; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      ctx.fillText(s.labels.imageBroken, cx, cy + k / 2 + 6 / s.cam.scale);
     }
   }
 
@@ -510,8 +575,8 @@ export class Renderer {
     if (n > 0 && d > 0) { ctx.fillStyle = t.ok; ctx.fillRect(px, y, Math.max(4, ((W - px * 2) * d) / n), 4); }
   }
 
-  private drawCard(ctx: CanvasRenderingContext2D, el: CardElement, s: RenderState) {
-    const t = s.theme, stage = s.stages.get(el.ref);
+  private drawCard(ctx: CanvasRenderingContext2D, el: CardElement, s: RenderState, ghost?: StageView) {
+    const t = s.theme, stage = ghost ?? s.stages.get(el.ref);
     ctx.translate(el.x, el.y);
     const W = CARD_W, H = el.h, r = t.radiusCard;
     if (s.cam.scale >= 0.4) { ctx.shadowColor = 'rgba(0,0,0,0.28)'; ctx.shadowBlur = 14; ctx.shadowOffsetY = 4; }
@@ -653,6 +718,40 @@ export class Renderer {
 
   // ---- interactive layer -------------------------------------------------------------------
 
+  private drawGhosts(ctx: CanvasRenderingContext2D, s: RenderState, o: Overlay) {
+    const { cam, dpr, theme: t } = s;
+    const world = () => ctx.setTransform(dpr * cam.scale, 0, 0, dpr * cam.scale, dpr * cam.x, dpr * cam.y);
+    ctx.save();
+    world();
+    ctx.strokeStyle = t.accent; ctx.fillStyle = t.accent; ctx.lineWidth = 1.6; ctx.globalAlpha = 0.85;
+    for (const e of o.ghostEdges) {
+      const bz = edgeCurve(e.a, e.b);
+      ctx.setLineDash([6, 5]);
+      ctx.beginPath(); ctx.moveTo(bz[0][0], bz[0][1]);
+      ctx.bezierCurveTo(bz[1][0], bz[1][1], bz[2][0], bz[2][1], bz[3][0] - 6, bz[3][1]); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(bz[3][0], bz[3][1]); ctx.lineTo(bz[3][0] - 9, bz[3][1] - 4.5); ctx.lineTo(bz[3][0] - 9, bz[3][1] + 4.5); ctx.closePath(); ctx.fill();
+    }
+    ctx.restore();
+    for (const g of o.ghosts) {
+      ctx.save();
+      world();
+      ctx.globalAlpha = 0.6;
+      this.drawCard(ctx, g.el, s, g.stage);
+      ctx.restore();
+      ctx.save();
+      world();
+      ctx.translate(g.el.x, g.el.y);
+      ctx.strokeStyle = t.accent; ctx.lineWidth = 2; ctx.setLineDash([8, 5]);
+      ctx.beginPath(); ctx.roundRect(0, 0, CARD_W, g.el.h, t.radiusCard); ctx.stroke(); ctx.setLineDash([]);
+      ctx.font = fontOf(10, t.fontUi, 600);
+      const label = s.labels.ghostBadge, bw = measureText(label, ctx.font) + 14;
+      ctx.beginPath(); ctx.roundRect(CARD.padX, -9, bw, 18, 9); ctx.fillStyle = t.accent; ctx.fill();
+      if (cam.scale >= 0.3) { ctx.fillStyle = t.onAccent; ctx.textBaseline = 'middle'; ctx.textAlign = 'left'; ctx.fillText(label, CARD.padX + 7, 0.5); }
+      ctx.restore();
+    }
+  }
+
   drawInteractive(ctx: CanvasRenderingContext2D, s: RenderState, o: Overlay) {
     const { cam, dpr, theme: t } = s;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -663,6 +762,18 @@ export class Renderer {
       return [a[0] - pad, a[1] - pad, c[0] - a[0] + pad * 2, c[1] - a[1] + pad * 2];
     };
     ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    if (o.ghosts.length) this.drawGhosts(ctx, s, o);
+    for (const g of o.glows) {
+      const [x, y, w, h] = rectS(g.b);
+      const r = t.radiusCard * cam.scale;
+      ctx.beginPath(); ctx.roundRect(x, y, w, h, r);
+      ctx.fillStyle = withAlpha(t.accent, 0.12 * g.alpha); ctx.fill();
+      ctx.save();
+      ctx.shadowColor = t.accent; ctx.shadowBlur = 26 * g.alpha;
+      ctx.strokeStyle = withAlpha(t.accent, 0.9 * g.alpha); ctx.lineWidth = 3;
+      ctx.stroke();
+      ctx.restore();
+    }
     for (const el of o.haloCards) {
       const [x, y, w, h] = rectS({ minX: el.x, minY: el.y, maxX: el.x + el.w, maxY: el.y + el.h });
       const r = t.radiusCard * cam.scale;
@@ -689,6 +800,19 @@ export class Renderer {
       const [x, y, w, h] = rectS({ minX: e.x, minY: e.y, maxX: e.x + e.w, maxY: e.y + e.h }, 5);
       ctx.strokeStyle = t.accent; ctx.lineWidth = 2; ctx.setLineDash([4, 3]);
       ctx.beginPath(); ctx.roundRect(x, y, w, h, 8); ctx.stroke(); ctx.setLineDash([]);
+    }
+    for (const b of o.erase) {
+      const [x, y, w, h] = rectS(b, 2);
+      ctx.fillStyle = withAlpha(t.bg, 0.65); ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = t.bad; ctx.lineWidth = 1.2; ctx.setLineDash([4, 3]); ctx.strokeRect(x, y, w, h); ctx.setLineDash([]);
+    }
+    if (o.guides.length) {
+      ctx.strokeStyle = t.bad; ctx.lineWidth = 1; ctx.beginPath();
+      for (const g of o.guides) {
+        if (g.axis === 'x') { const a = S([g.pos, g.from]), b = S([g.pos, g.to]); ctx.moveTo(Math.round(a[0]) + 0.5, a[1] - 6); ctx.lineTo(Math.round(b[0]) + 0.5, b[1] + 6); }
+        else { const a = S([g.from, g.pos]), b = S([g.to, g.pos]); ctx.moveTo(a[0] - 6, Math.round(a[1]) + 0.5); ctx.lineTo(b[0] + 6, Math.round(b[1]) + 0.5); }
+      }
+      ctx.stroke();
     }
     if (o.marquee) {
       const [x, y, w, h] = rectS(o.marquee);

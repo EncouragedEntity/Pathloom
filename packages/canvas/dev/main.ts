@@ -113,9 +113,18 @@ const host: CanvasHost = {
     editor.setStages(views());
   },
   openStage(key) { note = `openStage(${key})`; refreshInfo(); },
+  // Fake asset store: blobs live as object URLs under made-up asset paths.
+  async saveAsset(file, name) {
+    const ext = (/\.(\w+)$/.exec(name)?.[1] ?? file.type.split('/')[1] ?? 'png').toLowerCase();
+    const path = `assets/${Math.random().toString(16).slice(2, 8)}.${ext}`;
+    assets.set(path, URL.createObjectURL(file));
+    note = `saveAsset ${path} (${file.size} B)`; refreshInfo();
+    return path;
+  },
 };
+const assets = new Map<string, string>();
 
-const editor: Editor = createEditor(cv, { board: initialBoard(), stages: views(), host, theme, style });
+const editor: Editor = createEditor(cv, { board: initialBoard(), stages: views(), host, theme, style, assetUrl: (p) => assets.get(p) ?? p });
 (window as unknown as { __editor: Editor }).__editor = editor;
 
 function applyTheme(t2: ThemeTokens) {
@@ -129,6 +138,7 @@ function applyTheme(t2: ThemeTokens) {
 const tools: [Tool, string, string][] = [
   ['select', 'Select', 'V'], ['hand', 'Hand', 'H'], ['rect', 'Rect', '2'], ['diamond', 'Diamond', '3'], ['ellipse', 'Ellipse', '4'],
   ['arrow', 'Arrow', '5'], ['line', 'Line', 'L'], ['pencil', 'Pencil', '6'], ['text', 'Text', '7'], ['stage', 'Stage', 'S'], ['frame', 'Frame', 'F'],
+  ['sticky', 'Sticky', '9'], ['image', 'Image', '8'], ['eraser', 'Eraser', '0'],
 ];
 const actions: [string, string, () => void][] = [
   ['undo', 'Undo', () => editor.undo()], ['redo', 'Redo', () => editor.redo()], ['fit', 'Fit', () => editor.zoomToFit()],
@@ -137,8 +147,16 @@ const actions: [string, string, () => void][] = [
   ['convert', 'To stage', () => { void editor.convertSelectionToStage(); }],
   ['stress', 'Shapes 2000', () => stress()], ['cards', 'Cards 200', () => loadPreset('cards')], ['both', 'Both', () => loadPreset('both')], ['bench', 'Bench', () => { void runBench('both', style); }],
   ['phases', 'Phases', () => loadPreset('phases')],
+  ['snap', 'Snap: off', () => { editor.setSnap(!editor.getSnap()); setLabel('snap', `Snap: ${editor.getSnap() ? 'on' : 'off'}`); }],
+  ['mini', 'Minimap: off', () => { editor.setMinimap(!editor.getMinimap()); setLabel('mini', `Minimap: ${editor.getMinimap() ? 'on' : 'off'}`); }],
+  ['group', 'Group', () => editor.runCommand('edit.group')], ['ungroup', 'Ungroup', () => editor.runCommand('edit.ungroup')],
+  ['alignL', 'Align L', () => editor.runCommand('align.left')], ['alignT', 'Align T', () => editor.runCommand('align.top')], ['distH', 'Distribute H', () => editor.runCommand('distribute.h')],
+  ['find', 'Find…', () => { const q = prompt('Find'); if (!q) return; const ids = editor.findElements(q); note = `find "${q}": ${ids.length}`; refreshInfo(); if (ids[0]) editor.focusElement(ids[0]); }],
   ['exec', 'Execution: off', () => { editor.setExecutionMode(!editor.getExecutionMode()); setLabel('exec', `Execution: ${editor.getExecutionMode() ? 'on' : 'off'}`); }],
   ['pan', 'Pan test', () => panTest()],
+  ['hl', 'Highlight', () => { const ks = raw.map((r) => r.key).sort(() => Math.random() - 0.5).slice(0, 2); editor.highlightStages(ks); note = 'highlight ' + ks.join(','); refreshInfo(); }],
+  ['ghosts', 'Ghosts', () => ghostDemo()],
+  ['reload', 'Reload keepCamera', () => { editor.setBoard(editor.getBoard(), { keepCamera: true }); note = 'reloaded keepCamera'; refreshInfo(); }],
 ];
 bar.innerHTML = tools.map(([k, l, s]) => `<button data-tool="${k}" title="${l}">${l}<kbd>${s}</kbd></button>`).join('') + '<span class="sep"></span>' +
   actions.map(([k, l]) => `<button data-act="${k}">${l}</button>`).join('');
@@ -150,6 +168,18 @@ bar.addEventListener('click', (e) => {
 });
 function setLabel(k: string, text: string) { const b = bar.querySelector(`button[data-act="${k}"]`); if (b) b.textContent = text; }
 host.onToolChange('select');
+
+let ghostOn = false;
+/** Toggle two proposed stages: G1 depends on two real cards, G2 on G1. */
+function ghostDemo() {
+  ghostOn = !ghostOn;
+  if (!ghostOn) { editor.setGhosts([]); return; }
+  const cards = editor.getBoard().elements.filter((e) => e.type === 'card') as unknown as { ref: string; x: number; y: number }[];
+  const deps = cards.slice(0, 2).map((c) => c.ref);
+  const right = Math.max(...cards.map((c) => c.x)) + 330, y0 = cards[0]?.y ?? 0;
+  const mk = (key: string, title: string, d: string[]): StageView => ({ key, title, kind: 'stage', who: 'ai', due: null, priority: 'med', branch: null, pr: null, tags: [], depends: d.map((id) => ({ id, soft: false })), description: '', tasks: [t(key + '-1', 'Proposed task'), t(key + '-2', 'Another one')], comments: [], status: 'ready', progress: [0, 2] });
+  editor.setGhosts([{ stage: mk('G1', 'Proposed: add telemetry', deps), x: right, y: y0 }, { stage: mk('G2', 'Proposed: ship beta', ['G1']), x: right + 330, y: y0 }]);
+}
 
 // ---- stress presets ------------------------------------------------------------------------
 function rng(seed0: number) {

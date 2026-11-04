@@ -15,6 +15,7 @@ export function App() {
     const t = THEMES[theme];
     applyCssVars(t.tokens);
     document.documentElement.dataset.mode = t.mode;
+    try { localStorage.setItem('pathloom.theme', theme); } catch { /* preference only */ }
   }, [theme]);
 
   useEffect(() => {

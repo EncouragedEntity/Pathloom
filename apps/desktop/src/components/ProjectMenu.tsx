@@ -7,10 +7,9 @@ import { api, errorText, type RecentProject } from '../api';
 import { useApp } from '../store';
 import { setLanguage } from '../i18n';
 import { createProject, openProject, reopenLastEnabled, setReopenLast } from '../projectActions';
-import type { ThemeId } from '../theme';
+import { THEME_NAMES, nextTheme } from '../theme';
 import { effectiveKeymap, label, useKeys } from '../keys';
 
-const THEME_NAMES: Record<ThemeId, string> = { graphite: 'Graphite', paper: 'Warm paper' };
 
 /** Project switcher + quick settings, opened from the project name in the sidebar (Ctrl+O opens a folder). */
 export function ProjectMenu() {
@@ -72,7 +71,7 @@ export function ProjectMenu() {
           <button role="menuitem" onClick={() => setLanguage(i18n.language === 'uk' ? 'en' : 'uk')}>
             <IconLanguage size={15} />{t('sidebar.language')}<span className="pm-val">{i18n.language === 'uk' ? 'Українська' : 'English'}</span>
           </button>
-          <button role="menuitem" onClick={() => set({ theme: theme === 'graphite' ? 'paper' : 'graphite' })}>
+          <button role="menuitem" onClick={() => set({ theme: nextTheme(theme) })}>
             <IconPalette size={15} />{t('sidebar.theme')}<span className="pm-val">{THEME_NAMES[theme]}</span>
           </button>
           <button role="menuitem" onClick={() => { setOpen(false); set({ settingsTab: 'general' }); }}><IconSettings size={15} />{t('menu.allSettings')}<kbd>{label('app.settings', keys)}</kbd></button>

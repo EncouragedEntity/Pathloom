@@ -1,0 +1,8 @@
+{
+  "name": "pathloom",
+  "version": "0.1.0",
+  "description": "Plan projects on a Pathloom board: stages, tasks, dependencies and progress through the pathloom MCP server.",
+  "author": { "name": "XxArDy" },
+  "license": "MIT OR Apache-2.0",
+  "repository": "https://github.com/XxArDy/Pathloom"
+}

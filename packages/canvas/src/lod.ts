@@ -26,7 +26,7 @@ export const TEXT_MIN_PX = 4;
 export const lodSketch = (scale: number) => scale >= SKETCH_MIN_SCALE;
 export const lodTextPx = (fontSize: number, scale: number) => fontSize * scale < TEXT_MIN_PX;
 
-const DOT_TYPES = new Set(['rect', 'ellipse', 'diamond', 'sticky', 'text']);
+const DOT_TYPES = new Set(['rect', 'ellipse', 'diamond', 'sticky', 'text', 'image']);
 export const lodDot = (el: Element, scale: number) => DOT_TYPES.has(el.type) && Math.max(el.w, el.h) * scale < DOT_PX;
 
 export function cacheMargin(w: number, h: number, dpr: number): { mx: number; my: number } {

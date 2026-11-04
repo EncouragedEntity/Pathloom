@@ -1,0 +1,16 @@
+{
+  "name": "pathloom",
+  "owner": {
+    "name": "XxArDy"
+  },
+  "plugins": [
+    {
+      "name": "pathloom",
+      "source": "./plugin",
+      "description": "Pathloom MCP server and planning skill for Claude Code."
+    }
+  ],
+  "metadata": {
+    "description": "Pathloom: local whiteboard + roadmap for projects built with AI agents. MCP server and planning skill."
+  }
+}

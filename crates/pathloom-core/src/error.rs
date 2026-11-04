@@ -20,6 +20,12 @@ pub enum Error {
     /// Board name with `..`, empty segments, absolute path or backslashes.
     #[error("invalid name: {0}")]
     InvalidName(String),
+    /// Optimistic-concurrency failure: the stage file changed since the caller read it.
+    #[error("conflict: stage {key} changed since it was read")]
+    Conflict { key: String },
+    /// Malformed or inconsistent `apply` spec / argument.
+    #[error("invalid spec: {0}")]
+    InvalidSpec(String),
     #[error("project already initialized at {}", .0.display())]
     AlreadyInitialized(PathBuf),
 }

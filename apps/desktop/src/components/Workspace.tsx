@@ -1,12 +1,16 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { IconX, IconMap, IconPlayerPlay, IconLock, IconLayoutBoard, IconListDetails, IconFocus2 } from '@tabler/icons-react';
+import { IconX, IconMap, IconPlayerPlay, IconLock, IconLayoutBoard, IconListDetails, IconFocus2, IconChartDonut } from '@tabler/icons-react';
 import { useApp } from '../store';
 import { Sidebar } from './Sidebar';
 import { CanvasView } from './CanvasView';
 import { Inspector } from './Inspector';
 import { ListView } from './ListView';
 import { SettingsDialog } from './SettingsDialog';
+import { AgentBanner } from './AgentBanner';
+import { OverviewView } from './OverviewView';
+import { CommandPalette } from './CommandPalette';
+import { startAgentSync } from '../agentSync';
 import { effectiveKeymap, label, useAppShortcuts, useKeys } from '../keys';
 import { openProject } from '../projectActions';
 import { errorText } from '../api';
@@ -65,8 +69,18 @@ export function Workspace() {
     'app.toggleView': () => { const s = useApp.getState(); s.set({ view: s.view === 'board' ? 'list' : 'board' }); },
     'app.openFolder': () => { openProject().catch((e) => useApp.getState().set({ error: errorText(e) })); },
     'app.settings': () => useApp.getState().set({ settingsTab: 'general' }),
+    'app.palette': () => useApp.getState().set({ paletteOpen: true }),
   }), []);
   useAppShortcuts(handlers);
+
+  const root = project?.root;
+  useEffect(() => {
+    if (!root) return;
+    let stop: (() => void) | undefined;
+    let alive = true;
+    startAgentSync().then((un) => { if (alive) stop = un; else un(); }).catch(() => undefined);
+    return () => { alive = false; stop?.(); };
+  }, [root]);
 
   return (
     <div className="ws">
@@ -78,11 +92,14 @@ export function Workspace() {
           <div className="views" role="tablist">
             <button role="tab" aria-selected={view === 'board'} className={`btn sm ${view === 'board' ? 'on' : ''}`} onClick={() => set({ view: 'board' })}><IconLayoutBoard size={14} />{t('views.board')}</button>
             <button role="tab" aria-selected={view === 'list'} className={`btn sm ${view === 'list' ? 'on' : ''}`} onClick={() => set({ view: 'list' })}><IconListDetails size={14} />{t('views.list')}</button>
+            <button role="tab" aria-selected={view === 'overview'} className={`btn sm ${view === 'overview' ? 'on' : ''}`} onClick={() => set({ view: 'overview' })}><IconChartDonut size={14} />{t('views.overview')}</button>
           </div>
         </div>
         <div className="area">
           {activeBoard ? <CanvasView key={activeBoard} /> : null}
           {view === 'list' && <div className="overlay-page"><ListView /></div>}
+          {view === 'overview' && <div className="overlay-page"><OverviewView /></div>}
+          <AgentBanner />
           {error && (
             <div className="toast" role="alert" onClick={() => set({ error: null })}>{error}</div>
           )}
@@ -91,6 +108,7 @@ export function Workspace() {
       </section>
       {selectedStage && <Inspector stageKey={selectedStage} />}
       <SettingsDialog />
+      <CommandPalette />
     </div>
   );
 }

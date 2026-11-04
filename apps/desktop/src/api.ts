@@ -43,10 +43,17 @@ export const api = {
   taskRename: (taskId: string, title: string) => invoke<StageView[]>('task_rename', { taskId, title }),
   taskRemove: (taskId: string) => invoke<StageView[]>('task_remove', { taskId }),
   subtaskAdd: (taskId: string, title: string) => invoke<StageView[]>('subtask_add', { taskId, title }),
-  stageRename:(key: string, title: string) => invoke<StageView[]>('stage_rename', { key, title }),
-  stageLink:(from: string, to: string) => invoke<StageView[]>('stage_link', { from, to }),
+  assetSave: (name: string, bytes: number[]) => invoke<string>('asset_save', { name, bytes }),
+  stageRename: (key: string, title: string) => invoke<StageView[]>('stage_rename', { key, title }),
+  stageLink: (from: string, to: string) => invoke<StageView[]>('stage_link', { from, to }),
   stageUnlink: (from: string, to: string) => invoke<StageView[]>('stage_unlink', { from, to }),
 };
+
+/** URL of a project asset (plan/assets/...) served by the app's `plasset` protocol. */
+export function assetUrl(path: string): string {
+  const base = navigator.userAgent.includes('Windows') ? 'http://plasset.localhost/' : 'plasset://localhost/';
+  return base + path.split('/').map(encodeURIComponent).join('/');
+}
 
 export function errorText(e: unknown): string {
   return typeof e === 'string' ? e : e instanceof Error ? e.message : String(e);

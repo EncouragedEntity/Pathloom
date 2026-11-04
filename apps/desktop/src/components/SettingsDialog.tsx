@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { IconX, IconRotate, IconAlertTriangle, IconKeyboard, IconAdjustments, IconPlus } from '@tabler/icons-react';
 import { useApp } from '../store';
+import { THEME_NAMES, THEME_ORDER } from '../theme';
 import { setLanguage } from '../i18n';
 import { reopenLastEnabled, setReopenLast } from '../projectActions';
 import {
@@ -104,7 +105,7 @@ function Shortcuts() {
 
 function General() {
   const { t, i18n } = useTranslation();
-  const { theme, set } = useApp();
+  const { theme, renderStyle, set } = useApp();
   const [reopen, setReopen] = useState(reopenLastEnabled());
   return (
     <dl className="meta settings-general">
@@ -118,8 +119,15 @@ function General() {
       <dt>{t('sidebar.theme')}</dt>
       <dd>
         <select value={theme} onChange={(e) => set({ theme: e.target.value as typeof theme })}>
-          <option value="graphite">Graphite</option>
-          <option value="paper">Warm paper</option>
+          {THEME_ORDER.map((id) => <option key={id} value={id}>{THEME_NAMES[id]}</option>)}
+        </select>
+      </dd>
+      <dt>{t('settings.renderStyle')}</dt>
+      <dd>
+        <select value={renderStyle} onChange={(e) => set({ renderStyle: e.target.value as typeof renderStyle })}>
+          <option value="theme">{t('settings.styles.theme')}</option>
+          <option value="clean">{t('settings.styles.clean')}</option>
+          <option value="sketch">{t('settings.styles.sketch')}</option>
         </select>
       </dd>
       <dt>{t('menu.reopenLast')}</dt>

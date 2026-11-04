@@ -107,3 +107,45 @@ pub(crate) fn cycle_for_link(stages: &[Stage], from: &str, to: &str) -> Option<V
     let (_, path) = astar(&g, t, |n| n == f, |_| 1, |_| 0)?;
     Some(path.into_iter().map(|n| g[n].to_string()).collect())
 }
+
+/// Any dependency cycle among known stages, as `[a, b, .., z]` (z depends back on a). `None` if acyclic.
+pub(crate) fn find_cycle(stages: &[Stage]) -> Option<Vec<String>> {
+    use petgraph::algo::tarjan_scc;
+    let mut g: DiGraph<&str, ()> = DiGraph::new();
+    let idx: HashMap<&str, _> = stages.iter().map(|s| (s.key.as_str(), g.add_node(s.key.as_str()))).collect();
+    for s in stages {
+        for d in &s.depends {
+            if let (Some(&a), Some(&b)) = (idx.get(d.id.as_str()), idx.get(s.key.as_str())) {
+                g.add_edge(a, b, ());
+            }
+        }
+    }
+    let scc = tarjan_scc(&g)
+        .into_iter()
+        .filter(|c| c.len() > 1 || c.iter().any(|&n| g.contains_edge(n, n)))
+        .min_by_key(|c| c.iter().map(|&n| g[n]).min().unwrap_or(""))?;
+    let start = *scc.iter().min_by_key(|&&n| g[n])?;
+    // BFS inside the component from `start` back to `start`.
+    let mut parent: HashMap<_, _> = HashMap::new();
+    let mut queue = std::collections::VecDeque::from([start]);
+    while let Some(n) = queue.pop_front() {
+        for m in g.neighbors(n) {
+            if m == start {
+                let mut path = vec![n];
+                while let Some(&p) = parent.get(path.last()?) {
+                    path.push(p);
+                }
+                path.reverse();
+                if path.first() != Some(&start) {
+                    path.insert(0, start);
+                }
+                return Some(path.into_iter().map(|n| g[n].to_string()).collect());
+            }
+            if scc.contains(&m) && !parent.contains_key(&m) && m != start {
+                parent.insert(m, n);
+                queue.push_back(m);
+            }
+        }
+    }
+    Some(scc.into_iter().map(|n| g[n].to_string()).collect())
+}

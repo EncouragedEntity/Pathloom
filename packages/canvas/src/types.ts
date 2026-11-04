@@ -127,3 +127,6 @@ export interface ThemeTokens {
   fontUi: string; fontHand: string; fontMono: string;
   radiusCard: number;
 }
+
+/** A proposed stage card drawn at a world position; not a board element (not saved, selectable or undoable). */
+export interface Ghost { stage: StageView; x: number; y: number }

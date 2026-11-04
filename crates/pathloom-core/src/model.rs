@@ -4,7 +4,7 @@ use serde_json::{Map, Value};
 macro_rules! lower_enum {
     ($(#[$m:meta])* $name:ident { $($var:ident = $s:literal),+ } default $def:ident) => {
         $(#[$m])*
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, schemars::JsonSchema)]
         #[serde(rename_all = "lowercase")]
         pub enum $name { $(#[allow(missing_docs)] $var),+ }
         impl Default for $name { fn default() -> Self { Self::$def } }
@@ -45,13 +45,13 @@ impl Stage {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Dep {
     pub id: String,
     pub soft: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Task {
     pub id: String,
     pub title: String,
@@ -66,7 +66,7 @@ impl Task {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct Comment {
     pub at: String,
     pub author: String,
@@ -89,7 +89,7 @@ pub(crate) enum Seg {
     Text(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Stage {
     pub key: String,
@@ -122,7 +122,7 @@ pub struct StageView {
     pub progress: (u32, u32),
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Board {
     pub format: String,

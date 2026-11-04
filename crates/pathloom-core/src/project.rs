@@ -15,24 +15,60 @@ pub struct Project {
     pub config: ProjectConfig,
 }
 
-fn read_text(path: &Path) -> Result<String> {
+pub(crate) fn read_text(path: &Path) -> Result<String> {
     Ok(std::fs::read_to_string(path)?)
 }
 
-fn check_board_name(name: &str) -> Result<()> {
+pub(crate) fn check_board_name(name: &str) -> Result<()> {
     let bad = name.is_empty()
         || name.contains(['\\', ':'])
         || name.split('/').any(|s| s.is_empty() || s == "." || s == "..");
     if bad { Err(Error::InvalidName(name.into())) } else { Ok(()) }
 }
 
-fn check_key(key: &str) -> Result<()> {
+pub(crate) fn check_key(key: &str) -> Result<()> {
     if is_valid_key(key) { Ok(()) } else { Err(Error::InvalidKey(key.into())) }
+}
+
+/// Append a task with the next free `<KEY>-NN` id.
+pub(crate) fn push_task(s: &mut Stage, title: &str) {
+    let prefix = format!("{}-", s.key);
+    let max = s.tasks.iter().filter_map(|t| t.id.strip_prefix(&prefix)?.parse::<u32>().ok()).max().unwrap_or(0);
+    s.tasks.push(Task { id: format!("{prefix}{:02}", max + 1), title: title.trim().into(), done: false, sub: vec![] });
+}
+
+/// Set a task or subtask (by id) done/undone; a task with subtasks follows them.
+pub(crate) fn mark_done(s: &mut Stage, task_id: &str, done: bool) -> Result<()> {
+    let (i, j) = s
+        .tasks
+        .iter()
+        .enumerate()
+        .find_map(|(i, t)| {
+            if t.id == task_id {
+                Some((i, None))
+            } else {
+                t.sub.iter().position(|x| x.id == task_id).map(|j| (i, Some(j)))
+            }
+        })
+        .ok_or_else(|| Error::NotFound(format!("task {task_id}")))?;
+    let t = &mut s.tasks[i];
+    match j {
+        Some(j) => t.sub[j].done = done,
+        None => t.sub.iter_mut().for_each(|x| x.done = done),
+    }
+    t.done = if t.sub.is_empty() { done } else { t.sub.iter().all(|x| x.done) };
+    Ok(())
 }
 
 impl Project {
     /// Create `.pathloom/`, `plan/boards/roadmap.board.json` and `plan/stages/`.
     pub fn init(root: &Path, name: &str) -> Result<Project> {
+        Self::init_with(root, name, "plan")
+    }
+
+    /// Like [`Project::init`] with a custom plan directory (relative, inside the project).
+    pub fn init_with(root: &Path, name: &str, plan_dir: &str) -> Result<Project> {
+        check_board_name(plan_dir)?;
         let cfg_path = root.join(CONFIG);
         if cfg_path.exists() {
             return Err(Error::AlreadyInitialized(root.to_path_buf()));
@@ -40,7 +76,7 @@ impl Project {
         let config = ProjectConfig {
             format: 1,
             name: name.into(),
-            plan_dir: "plan".into(),
+            plan_dir: plan_dir.into(),
             agent_changes: AgentChanges::Auto,
         };
         let text = toml::to_string(&config).map_err(|e| parse_err(&cfg_path, e))?;
@@ -72,11 +108,11 @@ impl Project {
         self.root.join(&self.config.plan_dir)
     }
 
-    fn board_path(&self, name: &str) -> PathBuf {
+    pub(crate) fn board_path(&self, name: &str) -> PathBuf {
         self.plan_dir().join("boards").join(format!("{name}{BOARD_SUFFIX}"))
     }
 
-    fn stage_path(&self, key: &str) -> PathBuf {
+    pub(crate) fn stage_path(&self, key: &str) -> PathBuf {
         self.plan_dir().join("stages").join(format!("{key}.md"))
     }
 
@@ -193,7 +229,7 @@ impl Project {
         Ok(())
     }
 
-    fn edit_stage(&self, key: &str, f: impl FnOnce(&mut Stage) -> Result<()>) -> Result<Stage> {
+    pub(crate) fn edit_stage(&self, key: &str, f: impl FnOnce(&mut Stage) -> Result<()>) -> Result<Stage> {
         let mut s = self.load_stage(key)?;
         f(&mut s)?;
         self.save_stage(&s)?;
@@ -202,19 +238,7 @@ impl Project {
 
     pub fn add_task(&self, key: &str, title: &str) -> Result<Stage> {
         self.edit_stage(key, |s| {
-            let prefix = format!("{key}-");
-            let max = s
-                .tasks
-                .iter()
-                .filter_map(|t| t.id.strip_prefix(&prefix)?.parse::<u32>().ok())
-                .max()
-                .unwrap_or(0);
-            s.tasks.push(Task {
-                id: format!("{prefix}{:02}", max + 1),
-                title: title.trim().into(),
-                done: false,
-                sub: vec![],
-            });
+            push_task(s, title);
             Ok(())
         })
     }
@@ -310,14 +334,8 @@ impl Project {
     }
 
     pub fn set_task_done(&self, task_id: &str, done: bool) -> Result<Stage> {
-        self.edit_task(task_id, |tasks, i, j| {
-            let t = &mut tasks[i];
-            match j {
-                Some(j) => t.sub[j].done = done,
-                None => t.sub.iter_mut().for_each(|s| s.done = done),
-            }
-            t.done = if t.sub.is_empty() { done } else { t.sub.iter().all(|s| s.done) };
-        })
+        let key = task_id.split('-').next().unwrap_or("");
+        self.edit_stage(key, |s| mark_done(s, task_id, done))
     }
 
     pub fn rename_task(&self, task_id: &str, title: &str) -> Result<Stage> {

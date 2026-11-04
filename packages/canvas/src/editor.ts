@@ -1,4 +1,4 @@
-import type { Board, CardElement, Element, FrameElement, LinearElement, FreedrawElement, StageView, TextElement, ThemeTokens } from './types';
+import type { Board, CardElement, Ghost, Element, FrameElement, ImageElement, LinearElement, FreedrawElement, ShapeElement, StageView, TextElement, ThemeTokens } from './types';
 import type { CanvasHost, CanvasLabels, Editor, EditorOptions, EditorStats, Tool } from './editor-types';
 import { DEFAULT_LABELS } from './editor-types';
 import { Scene } from './scene';
@@ -11,10 +11,17 @@ import {
 import { newId, newSeed } from './id';
 import { keyAfter, keyBetween } from './index-key';
 import { computeFrames, execToolAllowed, frameHeaderRect, frameMembers, frameProgress, planRemoveStageCards, reorderKeys, unboundArrows } from './ops';
-import { CARD, CARD_W, MISSING_H, cardLayout, edgeCurve, extractEdges, hitCheckbox, taskDone, type CardLayout, type DepEdge } from './stage';
+import { CARD, CARD_W, MISSING_H, cardLayout, edgeCurve, extractEdges, hitCheckbox, statusColors, taskDone, type CardLayout, type DepEdge } from './stage';
 import { clearMeasureCache, measureText } from './measure';
 import { Renderer, type Overlay, type RenderState } from './render';
 import { STATIC_CACHE } from './lod';
+import { addHighlights, boundsWithGhosts, ghostEdges, highlightAlpha, keepSelection, pruneHighlights, type Highlight } from './live';
+import {
+  STICKY_PAD, alignDeltas, distributeDeltas, expandGroups, findElements, findSnap, groupUpdates, guideCandidates, imageFit, snapGrid, snapMove, snapPoint,
+  stickyNeeded, sweepHits, ungroupIds, unitsOf, wrapLines, type AlignMode, type Guide,
+} from './arrange';
+import { ImageCache, loadBlobImage } from './media';
+import { Minimap, centerCameraOn, type MiniRect } from './minimap';
 import { DEFAULT_CANVAS_KEYMAP, buildChordLookup, chordFromEvent, mergeKeymap, type CanvasCommand, type Keymap } from './keymap';
 
 type Dir = 'nw' | 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w';
@@ -27,8 +34,9 @@ interface MenuItem { label: string; run: () => void; disabled?: boolean; sep?: b
 
 type Gesture =
   | { kind: 'pan'; last: Point; right: boolean; dist: number }
-  | { kind: 'move'; start: Point; startScreen: Point; orig: Map<string, Element>; moved: boolean; shift: boolean; hitId: string }
-  | { kind: 'resize'; dir: Dir; B: Bounds; orig: Map<string, Element>; shift: boolean }
+  | { kind: 'move'; start: Point; startScreen: Point; orig: Map<string, Element>; moved: boolean; shift: boolean; hitId: string; b?: Bounds; cand?: Bounds[] }
+  | { kind: 'resize'; dir: Dir; B: Bounds; orig: Map<string, Element>; shift: boolean; imgs: boolean }
+  | { kind: 'erase'; last: Point; ids: Set<string> }
   | { kind: 'endpoint'; id: string; idx: number; orig: LinearElement }
   | { kind: 'marquee'; start: Point; base: Set<string> }
   | { kind: 'create'; tool: Tool; start: Point; startScreen: Point; cur: Point; shift: boolean }
@@ -74,6 +82,17 @@ class EditorImpl implements Editor {
   private rightMoved = false;
   private frameEdit: { input: HTMLInputElement; id: string } | null = null;
   private frameCache: { rev: number; srev: number; stats: Map<string, { done: number; total: number }>; frames: Element[] } | null = null;
+  private hl = new Map<string, Highlight>();
+  private ghosts: Ghost[] = [];
+  private snap = false;
+  private images: ImageCache;
+  private enteredGroup: string | null = null;
+  private anim: { from: Camera; to: Camera; t0: number; ms: number } | null = null;
+  private pasteTimer = 0;
+  private fileInput: HTMLInputElement | null = null;
+  private pickAt: Point | null = null;
+  private mini: Minimap | null = null;
+  private miniCache: { rev: number; srev: number; theme: ThemeTokens | null; exec: boolean; rects: MiniRect[]; content: Bounds | null; key: string } | null = null;
   private edgeCache: { rev: number; srev: number; edges: DepEdge[]; cards: Map<string, CardElement> } | null = null;
 
   private sCanvas: HTMLCanvasElement;
@@ -102,6 +121,8 @@ class EditorImpl implements Editor {
     this.style = opts.style ?? opts.board.style ?? 'clean';
     this.labels = { ...DEFAULT_LABELS, ...opts.labels };
     this.title = opts.board.title;
+    this.snap = !!opts.snap;
+    this.images = new ImageCache(opts.assetUrl ?? ((path) => path), () => this.invalidate());
     if (opts.keymap) this.setKeymap(opts.keymap);
     if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
     container.style.overflow = 'hidden';
@@ -126,6 +147,9 @@ class EditorImpl implements Editor {
     ic.addEventListener('dblclick', this.onDbl);
     ic.addEventListener('wheel', this.onWheel, { passive: false });
     ic.addEventListener('contextmenu', this.onContext);
+    ic.addEventListener('dragover', this.onDragOver);
+    ic.addEventListener('drop', this.onDrop);
+    window.addEventListener('paste', this.onPaste);
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
     document.fonts?.addEventListener?.('loadingdone', this.fontsHandler);
@@ -134,20 +158,40 @@ class EditorImpl implements Editor {
     this.resize();
     this.loadBoard(opts.board);
     this.zoomToFit();
+    if (opts.minimap) this.setMinimap(true);
   }
 
   // ---- public API --------------------------------------------------------------------------
 
-  setBoard(board: Board) {
+  setBoard(board: Board, opts?: { keepCamera?: boolean }) {
     this.cancelEdit();
+    this.enteredGroup = null;
     this.title = board.title;
     this.style = board.style ?? this.style;
     this.loadBoard(board);
-    this.autoFit = true;
     this.history.clear();
+    if (opts?.keepCamera) {
+      this.selected = keepSelection(this.selected, new Set(this.scene.all().map((e) => e.id)));
+      this.selEdge = null;
+      this.emitSelection();
+      this.invalidate();
+      return;
+    }
+    this.autoFit = true;
     this.selected.clear(); this.selEdge = null;
     this.emitSelection();
     this.zoomToFit();
+  }
+
+  highlightStages(keys: string[], ms = 8000) {
+    if (!keys.length) return;
+    addHighlights(this.hl, keys, performance.now(), ms);
+    this.invalidate(false, true);
+  }
+
+  setGhosts(ghosts: Ghost[]) {
+    this.ghosts = ghosts.slice();
+    this.invalidate(false, true);
   }
 
   setStages(stages: StageView[]) {
@@ -170,6 +214,7 @@ class EditorImpl implements Editor {
       if (this.gesture) { this.rollback(); this.gesture = null; this.draft = {}; }
       this.setTool(this.tool === 'hand' ? 'hand' : 'select');
       this.exec = true;
+      this.enteredGroup = null;
       this.selEdge = null;
       for (const id of [...this.selected]) if (this.scene.get(id)?.type !== 'card') this.selected.delete(id);
       this.emitSelection();
@@ -188,7 +233,7 @@ class EditorImpl implements Editor {
   }
 
   setTool(tool: Tool) {
-    if (tool === this.tool || (this.exec && !execToolAllowed(tool))) return;
+    if (tool === this.tool || (this.exec && !execToolAllowed(tool)) || (tool === 'image' && !this.host.saveAsset)) return;
     this.commitEdit();
     this.tool = tool;
     this.gesture = null; this.draft = {};
@@ -196,6 +241,7 @@ class EditorImpl implements Editor {
     this.host.onToolChange(tool);
     this.updateCursor();
     this.invalidate(false, true);
+    if (tool === 'image') this.pickImages(null);
   }
 
   getTool() { return this.tool; }
@@ -204,12 +250,13 @@ class EditorImpl implements Editor {
   redo() { if (!this.exec) this.applyHistory(this.history.redo(), 'after'); }
 
   zoomToFit() {
+    this.anim = null;
     // frame titles sit above the frame: leave room for them
-    const b = unionBounds(this.scene.all().map((e) => { const x = elementBounds(e); return e.type === 'frame' ? { ...x, minY: x.minY - 40 } : x; }));
+    const b = boundsWithGhosts(this.scene.all().map((e) => { const x = elementBounds(e); return e.type === 'frame' ? { ...x, minY: x.minY - 40 } : x; }), this.ghosts, (s) => this.layoutOf(s).h);
     this.setCamera(fitBounds(b, this.width, this.height));
   }
 
-  zoomTo(scale: number) { this.autoFit = false; this.setCamera(zoomAt(this.cam, scale, [this.width / 2, this.height / 2])); }
+  zoomTo(scale: number) { this.anim = null; this.autoFit = false; this.setCamera(zoomAt(this.cam, scale, [this.width / 2, this.height / 2])); }
   getZoom() { return this.cam.scale; }
 
   focusElement(id: string) {
@@ -217,17 +264,54 @@ class EditorImpl implements Editor {
     if (!el) return;
     const c = elementCenter(el);
     const sc = this.cam.scale;
-    this.setCamera({ scale: sc, x: this.width / 2 - c[0] * sc, y: this.height / 2 - c[1] * sc });
+    this.autoFit = false;
+    this.animateTo({ scale: sc, x: this.width / 2 - c[0] * sc, y: this.height / 2 - c[1] * sc });
     this.selected = new Set([id]); this.selEdge = null;
     this.emitSelection();
     this.invalidate();
+  }
+
+  findElements(query: string): string[] {
+    return findElements(this.scene.all(), (ref) => this.stages.get(ref), query);
+  }
+
+  setSnap(on: boolean) { this.snap = on; }
+  getSnap() { return this.snap; }
+
+  setMinimap(on: boolean) {
+    if (on === !!this.mini) return;
+    if (on) {
+      const m = new Minimap(this.container, this.labels.minimap);
+      m.onPan = (p) => { this.anim = null; this.autoFit = false; this.setCamera(centerCameraOn(this.cam, p, this.width, this.height)); };
+      this.mini = m; this.miniCache = null;
+      this.invalidate(false, true);
+    } else { this.mini?.destroy(); this.mini = null; }
+  }
+  getMinimap() { return !!this.mini; }
+
+  /** Glide the camera to `to` (centre-preserving interpolation, log-scale zoom, ease-out). */
+  private animateTo(to: Camera, ms = 250) {
+    this.anim = { from: { ...this.cam }, to: { ...to, scale: clampScale(to.scale) }, t0: performance.now(), ms };
+    this.invalidate(false, true);
+  }
+
+  private stepAnim(now: number) {
+    const a = this.anim;
+    if (!a) return;
+    const p = Math.min(1, (now - a.t0) / a.ms);
+    if (p >= 1) { this.anim = null; this.setCamera(a.to); return; }
+    const e = 1 - (1 - p) ** 3, W = this.width, H = this.height;
+    const cf = screenToWorld(a.from, [W / 2, H / 2]), ct = screenToWorld(a.to, [W / 2, H / 2]);
+    const sc = a.from.scale * (a.to.scale / a.from.scale) ** e;
+    const cx = cf[0] + (ct[0] - cf[0]) * e, cy = cf[1] + (ct[1] - cf[1]) * e;
+    this.setCamera({ scale: sc, x: W / 2 - cx * sc, y: H / 2 - cy * sc });
   }
 
   getBoard(): Board {
     return { format: 'pathloom.board/1', title: this.title, style: this.style, elements: this.scene.all().map(clone) };
   }
 
-  panBy(dx: number, dy: number) { this.autoFit = false; this.setCamera({ ...this.cam, x: this.cam.x + dx, y: this.cam.y + dy }); }
+  panBy(dx: number, dy: number) { this.anim = null; this.autoFit = false; this.setCamera({ ...this.cam, x: this.cam.x + dx, y: this.cam.y + dy }); }
   getStats() { return { ...this.stats, elements: this.scene.size }; }
 
   destroy() {
@@ -238,6 +322,9 @@ class EditorImpl implements Editor {
     this.ro.disconnect();
     window.removeEventListener('keydown', this.onKeyDown);
     window.removeEventListener('keyup', this.onKeyUp);
+    window.removeEventListener('paste', this.onPaste);
+    window.clearTimeout(this.pasteTimer);
+    this.mini?.destroy(); this.fileInput?.remove(); this.images.destroy();
     document.fonts?.removeEventListener?.('loadingdone', this.fontsHandler);
     this.sCanvas.remove(); this.iCanvas.remove(); this.toastEl?.remove();
   }
@@ -580,6 +667,7 @@ class EditorImpl implements Editor {
     e.preventDefault();
     this.closeMenu();
     this.autoFit = false;
+    this.anim = null;
     const { s } = this.toWorld(e);
     const mouse = e.deltaMode !== 0 ||
       (e.deltaX === 0 && Number.isInteger(e.deltaY) && Math.abs(e.deltaY) >= 100 && (Math.abs(e.deltaY) % 100 === 0 || Math.abs(e.deltaY) % 120 === 0));
@@ -599,6 +687,7 @@ class EditorImpl implements Editor {
   private onDown = (e: PointerEvent) => {
     // Any interaction ends auto-fit, so side panels opening later don't move the view.
     this.autoFit = false;
+    this.anim = null;
     this.commitEdit();
     this.iCanvas.setPointerCapture(e.pointerId);
     const { s, w } = this.toWorld(e);
@@ -613,21 +702,23 @@ class EditorImpl implements Editor {
     const shift = e.shiftKey;
     switch (this.tool) {
       case 'select': this.downSelect(s, w, shift); break;
-      case 'rect': case 'ellipse': case 'diamond': case 'frame':
-        this.gesture = { kind: 'create', tool: this.tool, start: w, startScreen: s, cur: w, shift };
+      case 'rect': case 'ellipse': case 'diamond': case 'frame': case 'sticky':
+        this.gesture = { kind: 'create', tool: this.tool, start: this.sp(w), startScreen: s, cur: this.sp(w), shift };
         break;
       case 'arrow': case 'line': {
         const startEl = this.bindableAt(w);
-        this.gesture = { kind: 'linear', tool: this.tool, start: w, startScreen: s, startEl, cur: w, endEl: null };
+        this.gesture = { kind: 'linear', tool: this.tool, start: startEl ? w : this.sp(w), startScreen: s, startEl, cur: w, endEl: null };
         break;
       }
       case 'pencil': this.gesture = { kind: 'pencil', pts: [[w[0], w[1], e.pointerType === 'pen' ? e.pressure : 0.5]] }; break;
       case 'text': {
-        const t = this.scene.hit(w, this.tol(), (x) => x.type === 'text' || x.type === 'rect' || x.type === 'ellipse' || x.type === 'diamond');
+        const t = this.scene.hit(w, this.tol(), (x) => x.type === 'text' || x.type === 'rect' || x.type === 'ellipse' || x.type === 'diamond' || x.type === 'sticky');
         this.gesture = { kind: 'text-click', at: w, target: t };
         break;
       }
-      case 'stage': void this.placeStage(w); break;
+      case 'stage': void this.placeStage(this.sp(w)); break;
+      case 'eraser': { const g = { kind: 'erase' as const, last: w, ids: new Set<string>() }; this.gesture = g; this.eraseTo(g, w); break; }
+      case 'image': this.pickImages(this.sp(w)); break;
     }
     this.invalidate(false, true);
   };
@@ -642,7 +733,7 @@ class EditorImpl implements Editor {
         const B = this.selBounds()!;
         const orig = new Map<string, Element>();
         for (const id of this.selected) { const el = this.scene.get(id); if (el && !el.locked) orig.set(id, clone(el)); }
-        if (orig.size) this.gesture = { kind: 'resize', dir: h.dir, B, orig, shift };
+        if (orig.size) this.gesture = { kind: 'resize', dir: h.dir, B, orig, shift, imgs: [...orig.values()].every((o) => o.type === 'image') };
       }
       return;
     }
@@ -655,9 +746,11 @@ class EditorImpl implements Editor {
         return;
       }
       this.selEdge = null;
-      if (shift && this.selected.has(hit.id)) { this.selected.delete(hit.id); this.emitSelection(); return; }
-      if (shift) this.selected.add(hit.id);
-      else if (!this.selected.has(hit.id)) this.selected = new Set([hit.id]);
+      if (this.enteredGroup && hit.group !== this.enteredGroup) this.enteredGroup = null;
+      const ids = this.pickIds(hit);
+      if (shift && ids.every((id) => this.selected.has(id))) { for (const id of ids) this.selected.delete(id); this.emitSelection(); return; }
+      if (shift) for (const id of ids) this.selected.add(id);
+      else if (!this.selected.has(hit.id)) this.selected = new Set(ids);
       this.emitSelection();
       if (this.exec) return;
       const orig = this.moveSet();
@@ -666,6 +759,7 @@ class EditorImpl implements Editor {
     }
     const ed = this.exec ? null : this.edgeAt(w);
     if (ed) { this.selected.clear(); this.selEdge = { from: ed.from, to: ed.to }; this.emitSelection(); return; }
+    this.enteredGroup = null;
     const base = shift ? new Set(this.selected) : new Set<string>();
     if (!shift && (this.selected.size || this.selEdge)) { this.selected.clear(); this.selEdge = null; this.emitSelection(); }
     this.gesture = { kind: 'marquee', start: w, base };
@@ -694,20 +788,21 @@ class EditorImpl implements Editor {
           if (el.type === 'frame') { const eb = elementBounds(el); if (eb.minX < b.minX || eb.minY < b.minY || eb.maxX > b.maxX || eb.maxY > b.maxY) continue; }
           ids.add(el.id);
         }
-        this.selected = ids;
+        this.selected = this.exec ? ids : expandGroups(this.scene.all(), ids);
         this.invalidate(false, true);
         break;
       }
+      case 'erase': this.eraseTo(g, w); break;
       case 'create': {
-        g.cur = w; g.shift = e.shiftKey;
-        this.draft = { draftShape: { tool: g.tool, b: this.shapeBounds(g.start, w, g.shift) } };
+        g.cur = this.sp(w); g.shift = e.shiftKey;
+        this.draft = { draftShape: { tool: g.tool, b: this.shapeBounds(g.start, g.cur, g.shift) } };
         this.invalidate(false, true);
         break;
       }
       case 'linear': {
         g.cur = w;
         g.endEl = this.bindableAt(w, g.startEl?.id);
-        const [a, b] = this.route(g.startEl, g.endEl, g.start, w);
+        const [a, b] = this.route(g.startEl, g.endEl, g.start, this.sp(w));
         this.draft = { draftLine: { pts: [a, b], head: g.tool === 'arrow' }, bindTarget: g.endEl ?? (g.startEl) };
         this.invalidate(false, true);
         break;
@@ -733,11 +828,12 @@ class EditorImpl implements Editor {
       case 'pan': if (g.right) this.rightMoved = g.dist > 4; break;
       case 'move':
         if (g.moved) this.end();
-        else if (!g.shift && this.selected.size > 1) { this.selected = new Set([g.hitId]); this.emitSelection(); }
+        else if (!g.shift && this.selected.size > 1) { const h = this.scene.get(g.hitId); this.selected = new Set(h ? this.pickIds(h) : [g.hitId]); this.emitSelection(); }
         break;
       case 'resize': this.end(); break;
       case 'endpoint': this.finishEndpoint(g, w); break;
       case 'marquee': this.emitSelection(); break;
+      case 'erase': this.finishErase(g); break;
       case 'create': this.finishCreate(g, s, w); break;
       case 'linear': this.finishLinear(g, s, w); break;
       case 'pencil': this.finishPencil(g); break;
@@ -753,6 +849,9 @@ class EditorImpl implements Editor {
     const hit = this.hitAt(w);
     if (this.exec) { if (hit?.type === 'card' && !this.checkboxAt(hit, w)) this.host.openStage((hit as CardElement).ref); return; }
     if (hit) {
+      if (hit.group && this.enteredGroup !== hit.group) {
+        this.enteredGroup = hit.group; this.selected = new Set([hit.id]); this.selEdge = null; this.emitSelection(); return;
+      }
       if (hit.type === 'frame') { this.startFrameRename(hit.id); return; }
       if (hit.type === 'card') { if (!this.checkboxAt(hit, w)) this.host.openStage((hit as CardElement).ref); return; }
       if (hit.type === 'text' || hit.type === 'rect' || hit.type === 'ellipse' || hit.type === 'diamond' || hit.type === 'sticky') this.startEdit(hit, w);
@@ -803,15 +902,27 @@ class EditorImpl implements Editor {
         g.orig.set(o.id, n);
         if (n.start !== o.start || n.end !== o.end) this.put(n);
       }
+      g.b = unionBounds([...g.orig.values()].map(elementBounds)) ?? undefined;
+      if (g.b && !this.snap && !this.exec) g.cand = guideCandidates(this.scene, g.b, 400 / this.cam.scale, new Set(g.orig.keys()));
     }
-    const dx = w[0] - g.start[0], dy = w[1] - g.start[1];
+    let dx = w[0] - g.start[0], dy = w[1] - g.start[1];
+    let guides: Guide[] = [];
+    if (g.b && !this.exec) {
+      if (this.snap) [dx, dy] = snapMove(g.b, dx, dy);
+      else if (g.cand?.length) {
+        const r = findSnap({ minX: g.b.minX + dx, minY: g.b.minY + dy, maxX: g.b.maxX + dx, maxY: g.b.maxY + dy }, g.cand, 6 / this.cam.scale);
+        dx += r.dx; dy += r.dy; guides = r.guides;
+      }
+    }
+    this.draft = guides.length ? { guides } : {};
     const moved = new Set<string>();
     for (const o of g.orig.values()) { this.put({ ...o, x: o.x + dx, y: o.y + dy }); if (!isLinear(o)) moved.add(o.id); }
     this.reroute(moved);
   }
 
-  private resizeDrag(g: Extract<Gesture, { kind: 'resize' }>, w: Point) {
+  private resizeDrag(g: Extract<Gesture, { kind: 'resize' }>, p: Point) {
     this.begin();
+    const w = this.sp(p);
     const B = g.B;
     let { minX, minY, maxX, maxY } = B;
     if (g.dir.includes('w')) minX = Math.min(w[0], maxX - 4);
@@ -820,7 +931,8 @@ class EditorImpl implements Editor {
     if (g.dir.includes('s')) maxY = Math.max(w[1], minY + 4);
     const ow = Math.max(B.maxX - B.minX, 1e-6), oh = Math.max(B.maxY - B.minY, 1e-6);
     let sx = (maxX - minX) / ow, sy = (maxY - minY) / oh;
-    if (g.shift && g.dir.length === 2) {
+    // images keep their aspect on corner handles by default (Shift frees it); everything else is the other way round
+    if (g.dir.length === 2 && g.shift !== g.imgs) {
       const k = Math.abs(sx - 1) > Math.abs(sy - 1) ? sx : sy;
       sx = sy = k;
       if (g.dir.includes('w')) minX = maxX - ow * k;
@@ -879,12 +991,13 @@ class EditorImpl implements Editor {
 
   private finishCreate(g: Extract<Gesture, { kind: 'create' }>, s: Point, w: Point) {
     const dragged = Math.hypot(s[0] - g.startScreen[0], s[1] - g.startScreen[1]) >= 4;
-    const frame = g.tool === 'frame';
+    const frame = g.tool === 'frame', sticky = g.tool === 'sticky';
     let b: Bounds;
-    if (dragged) b = this.shapeBounds(g.start, w, g.shift && !frame);
+    if (dragged) b = this.shapeBounds(g.start, this.sp(w), g.shift && !frame);
     else {
-      const dw = frame ? 360 : g.tool === 'rect' ? 140 : 120, dh = frame ? 240 : g.tool === 'rect' ? 90 : 120;
-      b = { minX: g.start[0] - dw / 2, minY: g.start[1] - dh / 2, maxX: g.start[0] + dw / 2, maxY: g.start[1] + dh / 2 };
+      const dw = frame ? 360 : sticky ? 160 : g.tool === 'rect' ? 140 : 120, dh = frame ? 240 : sticky ? 140 : g.tool === 'rect' ? 90 : 120;
+      const ox = this.snap ? snapGrid(g.start[0] - dw / 2) : g.start[0] - dw / 2, oy = this.snap ? snapGrid(g.start[1] - dh / 2) : g.start[1] - dh / 2;
+      b = { minX: ox, minY: oy, maxX: ox + dw, maxY: oy + dh };
     }
     const id = this.act2(() => {
       let el = this.base(g.tool as 'rect', b.minX, b.minY, b.maxX - b.minX, b.maxY - b.minY) as Element;
@@ -915,7 +1028,7 @@ class EditorImpl implements Editor {
       void this.link((g.startEl as CardElement).ref, (endEl as CardElement).ref);
       return;
     }
-    const [a, b] = this.route(g.startEl, endEl, g.start, w);
+    const [a, b] = this.route(g.startEl, endEl, g.start, this.sp(w));
     const id = this.act2(() => {
       let el = this.base(g.tool as 'arrow', a[0], a[1], 0, 0) as unknown as LinearElement;
       el = { ...el, points: [[0, 0], [b[0] - a[0], b[1] - a[1]]] };
@@ -966,7 +1079,7 @@ class EditorImpl implements Editor {
     const t = this.theme;
     ta.style.fontFamily = this.style === 'sketch' ? t.fontHand : t.fontUi;
     ta.style.color = t.text;
-    ta.style.textAlign = shape ? 'center' : ((this.edit && (this.scene.get(this.edit.id ?? '') as TextElement | undefined)?.align) || 'left');
+    ta.style.textAlign = shape ? (shape.type === 'sticky' ? 'left' : 'center') : ((this.edit && (this.scene.get(this.edit.id ?? '') as TextElement | undefined)?.align) || 'left');
   }
 
   private startEdit(target: Element | null, at: Point) {
@@ -980,6 +1093,7 @@ class EditorImpl implements Editor {
     this.edit = { ta, id: target?.type === 'text' ? target.id : null, at, shapeId: isShape ? target!.id : null };
     this.editingId = target?.id ?? null;
     this.styleTa(ta, isShape ? target : null);
+    if (target?.type === 'sticky') { ta.wrap = 'soft'; ta.style.whiteSpace = 'pre-wrap'; ta.style.overflowWrap = 'anywhere'; }
     ta.addEventListener('input', () => this.placeTa());
     ta.addEventListener('keydown', (ev) => {
       ev.stopPropagation();
@@ -1005,6 +1119,15 @@ class EditorImpl implements Editor {
     if (!ed) return;
     const { ta } = ed, k = this.cam.scale, size = this.editFontSize();
     ta.style.fontSize = size * k + 'px';
+    const sticky = ed.shapeId ? this.scene.get(ed.shapeId) : null;
+    if (sticky?.type === 'sticky') {
+      ta.style.width = (sticky.w - STICKY_PAD * 2) * k + 'px';
+      ta.style.height = '0';
+      ta.style.height = Math.max(ta.scrollHeight, size * k * 1.25) + 'px';
+      const [x0, y0] = worldToScreen(this.cam, [sticky.x + STICKY_PAD, sticky.y + STICKY_PAD]);
+      ta.style.left = x0 + 'px'; ta.style.top = y0 + 'px';
+      return;
+    }
     const m = this.blockSize(ta.value || ' ', size);
     const w = Math.max(m.w * k + 8, 24), h = Math.max(m.h * k, size * k * 1.25);
     ta.style.width = w + 'px'; ta.style.height = h + 'px';
@@ -1039,6 +1162,7 @@ class EditorImpl implements Editor {
         if (!sh) return;
         const n = { ...sh } as Element & { text?: string };
         if (value) n.text = value; else delete n.text;
+        if (n.type === 'sticky' && value) n.h = Math.max(n.h, this.stickyHeight(n as ShapeElement, value));
         this.put(n);
       } else if (ed.id) {
         const t = this.scene.get(ed.id) as TextElement | undefined;
@@ -1120,6 +1244,12 @@ class EditorImpl implements Editor {
     const mod = e.ctrlKey || e.metaKey;
     if (e.code === 'Space' && !mod) { e.preventDefault(); if (!this.spaceDown) { this.spaceDown = true; this.updateCursor(); } return; }
     const cmd = this.lookup.get(chordFromEvent(e) ?? '');
+    if (cmd === 'edit.paste') {
+      // No preventDefault: the browser then fires a paste event, which can carry clipboard images. Fallback if it never comes.
+      window.clearTimeout(this.pasteTimer);
+      this.pasteTimer = window.setTimeout(() => { this.pasteTimer = 0; this.paste(); }, 60);
+      return;
+    }
     if (cmd) { e.preventDefault(); this.runCommand(cmd); return; }
     // Arrow nudge is fixed (not rebindable): plain arrows move the selection, Shift = 10px.
     if (mod || e.altKey || this.exec || !e.code.startsWith('Arrow') || !this.selected.size) return;
@@ -1137,6 +1267,12 @@ class EditorImpl implements Editor {
     switch (cmd) {
       case 'edit.cancel':
         if (this.gesture) { this.rollback(); this.gesture = null; this.draft = {}; }
+        if (this.enteredGroup) { // first Esc leaves the group, keeping it selected as a whole
+          this.enteredGroup = null;
+          this.selected = expandGroups(this.scene.all(), this.selected);
+          this.emitSelection(); this.invalidate(false, true);
+          break;
+        }
         this.selected.clear(); this.selEdge = null;
         this.setTool('select');
         this.emitSelection();
@@ -1152,6 +1288,13 @@ class EditorImpl implements Editor {
       case 'edit.duplicate': this.duplicate(); break;
       case 'edit.paste': this.paste(); break;
       case 'edit.toggleLock': this.toggleLock(); break;
+      case 'edit.group': this.groupSelection(); break;
+      case 'edit.ungroup': this.ungroupSelection(); break;
+      case 'align.left': case 'align.center': case 'align.right': case 'align.top': case 'align.middle': case 'align.bottom':
+        this.arrange(cmd.slice(6) as AlignMode); break;
+      case 'distribute.h': this.arrange('dh'); break;
+      case 'distribute.v': this.arrange('dv'); break;
+      case 'view.toggleSnap': this.setSnap(!this.snap); break;
       case 'arrange.front': this.zOrder('front'); break;
       case 'arrange.back': this.zOrder('back'); break;
       // Execution mode is read-only: the rest only runs while editing.
@@ -1214,6 +1357,7 @@ class EditorImpl implements Editor {
   private cloneElements(src: Element[], offset: number) {
     const sorted = [...src].sort((a, b) => (a.index < b.index ? -1 : 1));
     const map = new Map(sorted.map((e) => [e.id, newId()]));
+    const gmap = new Map<string, string>(); // a copy of a group is its own group
     const ids: string[] = [];
     this.act(() => {
       for (const e of sorted) {
@@ -1226,6 +1370,7 @@ class EditorImpl implements Editor {
           if (l.end) { const m = map.get(l.end.el); if (m) l.end = { el: m }; else delete l.end; }
         }
         delete n.locked;
+        if (n.group) { if (!gmap.has(n.group)) gmap.set(n.group, newId()); n.group = gmap.get(n.group); }
         this.put(n);
         ids.push(n.id);
       }
@@ -1233,6 +1378,152 @@ class EditorImpl implements Editor {
     this.selected = new Set(ids); this.selEdge = null;
     this.emitSelection();
   }
+
+  // ---- groups, align, eraser, images -------------------------------------------------------
+
+  /** What a click on `el` selects: the whole group, or just the element inside an entered group. */
+  private pickIds(el: Element): string[] {
+    if (this.exec || !el.group || this.enteredGroup === el.group) return [el.id];
+    return [...expandGroups(this.scene.all(), [el.id])];
+  }
+
+  private groupSelection() {
+    if (this.exec) return;
+    const upd = groupUpdates(this.scene.all(), this.selected, newId());
+    if (!upd.size) return;
+    this.enteredGroup = null;
+    this.act(() => { for (const [id, group] of upd) this.put({ ...this.scene.get(id)!, group }); });
+  }
+
+  private ungroupSelection() {
+    if (this.exec) return;
+    const ids = ungroupIds(this.scene.all(), this.selected);
+    if (!ids.size) return;
+    this.enteredGroup = null;
+    this.act(() => { for (const id of ids) { const n = { ...this.scene.get(id)! }; delete n.group; this.put(n); } });
+  }
+
+  /** Align (or distribute: 'dh' / 'dv') the unlocked selection; groups move as one unit, frames take their members along. */
+  private arrange(kind: AlignMode | 'dh' | 'dv') {
+    if (this.exec) return;
+    const units = unitsOf(this.selectedEls().filter((e) => !e.locked));
+    const deltas = kind === 'dh' ? distributeDeltas(units, 'h') : kind === 'dv' ? distributeDeltas(units, 'v') : alignDeltas(units, kind);
+    if (!deltas.size) return;
+    const per = new Map<string, Point>();
+    for (const u of units) { const d = deltas.get(u.key); if (d) for (const id of u.ids) per.set(id, d); }
+    const all = this.scene.all();
+    for (const [fid, d] of [...per]) {
+      if (this.scene.get(fid)?.type !== 'frame') continue;
+      for (const id of frameMembers(all, [fid])) { const m = this.scene.get(id); if (m && !m.locked && !per.has(id)) per.set(id, d); }
+    }
+    this.act(() => {
+      const moved = new Set<string>();
+      for (const [id, d] of per) {
+        const el = this.scene.get(id)!;
+        const n = { ...el, x: el.x + d[0], y: el.y + d[1] } as Element;
+        if (isLinear(n)) { // an arrow that moves without its targets lets go of them
+          if (n.start && !per.has(n.start.el)) delete n.start;
+          if (n.end && !per.has(n.end.el)) delete n.end;
+        } else moved.add(id);
+        this.put(n);
+      }
+      this.reroute(moved);
+    });
+  }
+
+  /** Mark everything along the eraser's path (dimmed preview); nothing is deleted until release. */
+  private eraseTo(g: Extract<Gesture, { kind: 'erase' }>, to: Point) {
+    for (const e of sweepHits(this.scene, g.last, to, this.tol())) g.ids.add(e.id);
+    g.last = to;
+    this.draft = { erase: [...g.ids].map((id) => elementBounds(this.scene.get(id)!)) };
+    this.invalidate(false, true);
+  }
+
+  private finishErase(g: Extract<Gesture, { kind: 'erase' }>) {
+    const ids = new Set([...g.ids].filter((id) => this.scene.has(id)));
+    if (!ids.size || this.exec) return;
+    this.act(() => { this.unbindFrom(ids); for (const id of ids) this.del(id); });
+    this.emitSelection();
+  }
+
+  private stickyHeight(el: ShapeElement, text: string): number {
+    const size = el.fontSize ?? 18, font = `${size}px ${this.style === 'sketch' ? this.theme.fontHand : this.theme.fontUi}`;
+    return stickyNeeded(wrapLines(text, el.w - STICKY_PAD * 2, (x) => measureText(x, font)).length, size);
+  }
+
+  /** Open the OS file picker (hidden input). `at` = world point to centre the first image on (default: view centre). */
+  private pickImages(at: Point | null) {
+    if (this.exec || !this.host.saveAsset) return;
+    if (!this.fileInput) {
+      const input = document.createElement('input');
+      input.type = 'file'; input.accept = 'image/*'; input.multiple = true; input.tabIndex = -1;
+      input.style.cssText = 'position:absolute;width:0;height:0;opacity:0;pointer-events:none;';
+      input.addEventListener('change', () => {
+        const files = [...(input.files ?? [])];
+        input.value = '';
+        void this.addImages(files, this.pickAt);
+        this.setTool('select');
+      });
+      input.addEventListener('cancel', () => this.setTool('select'));
+      this.container.appendChild(input);
+      this.fileInput = input;
+    }
+    this.pickAt = at;
+    this.fileInput.click();
+  }
+
+  /** Store each image through the host and add an image element (one undo step per image). Selects them at the end. */
+  private async addImages(files: File[], at: Point | null) {
+    const save = this.host.saveAsset?.bind(this.host);
+    if (this.exec || !save) return;
+    const centre = at ?? screenToWorld(this.cam, [this.width / 2, this.height / 2]);
+    const added: string[] = [];
+    for (const f of files.filter((x) => x.type.startsWith('image/'))) {
+      try {
+        const loaded = await loadBlobImage(f);
+        const asset = await save(f, f.name || 'image');
+        if (this.destroyed || this.exec) return;
+        this.images.prime(asset, loaded.img, loaded.url);
+        const { w, h } = imageFit(loaded.img.naturalWidth, loaded.img.naturalHeight);
+        const off = added.length * 24;
+        let x = centre[0] - w / 2 + off, y = centre[1] - h / 2 + off;
+        if (this.snap) { x = snapGrid(x); y = snapGrid(y); }
+        const id = this.act2(() => {
+          const { seed: _s, roughness: _r, strokeWidth: _w, ...b } = this.base('image', x, y, w, h);
+          const el = { ...b, asset } as ImageElement;
+          this.put(el);
+          return el.id;
+        });
+        added.push(id);
+      } catch (e) { this.toast(String(e instanceof Error ? e.message : e)); }
+    }
+    if (added.length) { this.selected = new Set(added); this.selEdge = null; this.emitSelection(); }
+  }
+
+  private onPaste = (e: ClipboardEvent) => {
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    window.clearTimeout(this.pasteTimer); this.pasteTimer = 0;
+    const files = [...(e.clipboardData?.files ?? [])].filter((f) => f.type.startsWith('image/'));
+    e.preventDefault();
+    if (files.length && this.host.saveAsset && !this.exec) void this.addImages(files, null);
+    else this.paste();
+  };
+
+  private onDragOver = (e: DragEvent) => {
+    if (this.exec || !this.host.saveAsset || !e.dataTransfer?.types.includes('Files')) return;
+    e.preventDefault(); e.dataTransfer.dropEffect = 'copy';
+  };
+
+  private onDrop = (e: DragEvent) => {
+    const files = [...(e.dataTransfer?.files ?? [])].filter((f) => f.type.startsWith('image/'));
+    if (!files.length || this.exec || !this.host.saveAsset) return;
+    e.preventDefault();
+    void this.addImages(files, this.sp(this.toWorld(e).w));
+  };
+
+  /** Grid-snapped point when snapping is on (and editing). */
+  private sp(p: Point): Point { return this.snap && !this.exec ? snapPoint(p) : p; }
 
   // ---- context menu & element commands -----------------------------------------------------
 
@@ -1282,7 +1573,19 @@ class EditorImpl implements Editor {
     const lock: MenuItem = { label: els.every((e) => e.locked) ? L.ctxUnlock : L.ctxLock, run: () => this.toggleLock() };
     const del: MenuItem = { label: L.ctxDelete, run: () => this.deleteSelection(), disabled: els.every((e) => e.locked) };
     const sep: MenuItem = { label: '', run: () => undefined, sep: true };
-    if (!one) return [...z, sep, lock, del];
+    if (!one) {
+      const L2 = this.labels, units = unitsOf(els.filter((e) => !e.locked));
+      const mk = (label: string, run: () => void): MenuItem => ({ label, run });
+      const grp: MenuItem[] = [];
+      if (groupUpdates(this.scene.all(), this.selected, '').size) grp.push(mk(L2.ctxGroup, () => this.groupSelection()));
+      if (els.some((e) => e.group)) grp.push(mk(L2.ctxUngroup, () => this.ungroupSelection()));
+      const aln: MenuItem[] = units.length < 2 ? [] : [
+        mk(L2.ctxAlignLeft, () => this.arrange('left')), mk(L2.ctxAlignCenter, () => this.arrange('center')), mk(L2.ctxAlignRight, () => this.arrange('right')),
+        mk(L2.ctxAlignTop, () => this.arrange('top')), mk(L2.ctxAlignMiddle, () => this.arrange('middle')), mk(L2.ctxAlignBottom, () => this.arrange('bottom')),
+        ...(units.length >= 3 ? [mk(L2.ctxDistributeH, () => this.arrange('dh')), mk(L2.ctxDistributeV, () => this.arrange('dv'))] : []),
+      ];
+      return [...(grp.length ? [...grp, sep] : []), ...(aln.length ? [...aln, sep] : []), ...z, sep, lock, del];
+    }
     if (one.type === 'card') return [...open, sep, ...z, sep, lock, del];
     if (one.type === 'frame') return [{ label: L.ctxRename, run: () => this.startFrameRename(one.id) }, sep, ...z, sep, lock, del];
     const dup: MenuItem = { label: L.ctxDuplicate, run: () => this.duplicate() };
@@ -1299,7 +1602,7 @@ class EditorImpl implements Editor {
     const { s, w } = this.toWorld(e);
     const hit = this.hitAt(w);
     if (!hit) return;
-    if (!this.selected.has(hit.id)) { this.selected = new Set([hit.id]); this.selEdge = null; this.emitSelection(); }
+    if (!this.selected.has(hit.id)) { this.selected = new Set(this.pickIds(hit)); this.selEdge = null; this.emitSelection(); }
     this.openMenu(s, this.menuItems());
   };
 
@@ -1400,8 +1703,32 @@ class EditorImpl implements Editor {
       cam: this.cam, width: this.width, height: this.height, dpr: window.devicePixelRatio || this.dpr, theme: this.theme, style: this.style,
       scene: this.scene, stages: this.stages, layoutOf: this.layoutFor, edges: this.edges().edges, cards: this.edges().cards, selected: this.selected,
       selEdge: this.selEdge, editingId: this.editingId, labels: this.labels,
-      exec: this.exec, frameStats: this.frameInfo().stats,
+      exec: this.exec, frameStats: this.frameInfo().stats, images: this.images,
     };
+  }
+
+  /** Highlight glows and ghost cards (interactive layer only: the static bitmap cache is never touched). */
+  private liveOverlay(): Pick<Overlay, 'glows' | 'ghosts' | 'ghostEdges'> {
+    const now = performance.now();
+    pruneHighlights(this.hl, now);
+    const { cards } = this.edges();
+    const glows: Overlay['glows'] = [];
+    for (const [key, h] of this.hl) {
+      const c = cards.get(key);
+      if (c) glows.push({ b: { minX: c.x, minY: c.y, maxX: c.x + c.w, maxY: c.y + c.h }, alpha: highlightAlpha(h, now) });
+    }
+    const gs = this.ghosts.map((g) => ({ stage: g.stage, el: { id: 'ghost:' + g.stage.key, type: 'card', ref: g.stage.key, x: g.x, y: g.y, w: CARD_W, h: this.layoutOf(g.stage).h, index: '' } as CardElement }));
+    const rects = new Map<string, { x: number; y: number; w: number; h: number }>();
+    for (const [k, c] of cards) rects.set(k, c);
+    for (const g of gs) rects.set(g.stage.key, g.el);
+    const edges: Overlay['ghostEdges'] = [];
+    if (gs.length) {
+      for (const e of ghostEdges(this.ghosts, this.stages.values(), new Set(cards.keys()))) {
+        const a = rects.get(e.from), b = rects.get(e.to);
+        if (a && b) edges.push({ a, b, soft: e.soft });
+      }
+    }
+    return { glows, ghosts: gs, ghostEdges: edges };
   }
 
   private overlay(): Overlay {
@@ -1414,18 +1741,49 @@ class EditorImpl implements Editor {
       handles: this.handlePoints().map((h) => ({ pt: h.pt, round: h.round })),
       haloCards: cards,
       locks: els.filter((e) => e.locked).map((e) => { const b = elementBounds(e); return [b.maxX, b.minY] as Point; }),
-      marquee: null, draftShape: null, draftLine: null, draftPencil: null, bindTarget: null,
+      marquee: null, draftShape: null, draftLine: null, draftPencil: null, bindTarget: null, guides: [], erase: [],
+      ...this.liveOverlay(),
       ...this.draft,
     };
+  }
+
+  /** Redraws only when the scene, stages, theme, size or camera changed since the last draw (called from the rAF frame). */
+  private drawMinimap() {
+    const m = this.mini;
+    if (!m) return;
+    const t = this.theme, rev = this.scene.rev, srev = this.stagesRev;
+    let c = this.miniCache;
+    if (!c || c.rev !== rev || c.srev !== srev || c.theme !== t || c.exec !== this.exec) {
+      const rects: MiniRect[] = [];
+      const bs: Bounds[] = [];
+      for (const el of this.scene.all()) {
+        const b = elementBounds(el);
+        bs.push(b);
+        let color = t.text2, alpha = 0.55;
+        if (el.type === 'card') { const st = this.stages.get((el as CardElement).ref); color = st ? statusColors(st.status, t).fg : t.muted; alpha = 0.95; }
+        else if (el.type === 'frame') { color = t.border2; alpha = 0.4; }
+        else if (el.type === 'sticky') { color = t.warn; alpha = 0.85; }
+        else if (el.type === 'image') { color = t.accent; alpha = 0.5; }
+        rects.push({ b, color, alpha });
+      }
+      c = this.miniCache = { rev, srev, theme: t, exec: this.exec, rects, content: unionBounds(bs), key: '' };
+    }
+    const k = `${this.cam.x}|${this.cam.y}|${this.cam.scale}|${this.width}|${this.height}`;
+    if (c.key === k) return;
+    c.key = k;
+    m.draw({ rects: c.rects, content: c.content, cam: this.cam, viewW: this.width, viewH: this.height, panel: t.panel, border: t.border2, accent: t.accent });
   }
 
   private frame = () => {
     this.raf = 0;
     if (this.destroyed) return;
     const t0 = performance.now();
+    this.stepAnim(t0);
     const st = this.state();
     if (this.dirtyS) { const m = this.dirtyS; this.dirtyS = 0; this.renderer.drawStatic(this.sCtx, st, m === 3 ? 'content' : m === 2 ? 'idle' : 'camera'); }
     if (this.dirtyI) { this.dirtyI = false; this.renderer.drawInteractive(this.iCtx, st, this.overlay()); }
+    if (this.hl.size) this.invalidate(false, true); // keep animating only while a highlight is alive
+    if (this.mini) this.drawMinimap();
     if (this.edit) this.placeTa();
     if (this.frameEdit) this.placeFrameEdit();
     this.stats.frames++;

@@ -7,7 +7,7 @@ import {
 } from '@pathloom/canvas';
 import { create } from 'zustand';
 
-export type AppCommand = 'app.focus' | 'app.toggleView' | 'app.openFolder' | 'app.settings';
+export type AppCommand = 'app.focus' | 'app.toggleView' | 'app.openFolder' | 'app.settings' | 'app.palette';
 export type Command = CanvasCommand | AppCommand;
 export type FullKeymap = Record<Command, string[]>;
 
@@ -16,16 +16,18 @@ export const DEFAULT_APP_KEYMAP: Record<AppCommand, string[]> = {
   'app.toggleView': ['Mod+KeyL'],
   'app.openFolder': ['Mod+KeyO'],
   'app.settings': ['Mod+Comma'],
+  'app.palette': ['Mod+KeyK'],
 };
 
 export const DEFAULT_KEYMAP: FullKeymap = { ...DEFAULT_CANVAS_KEYMAP, ...DEFAULT_APP_KEYMAP };
 
 /** Display order and grouping in the settings dialog. */
 export const COMMAND_GROUPS: { id: string; commands: Command[] }[] = [
-  { id: 'tools', commands: ['tool.select', 'tool.hand', 'tool.rect', 'tool.diamond', 'tool.ellipse', 'tool.arrow', 'tool.line', 'tool.pencil', 'tool.text', 'tool.frame', 'tool.stage'] },
-  { id: 'edit', commands: ['edit.undo', 'edit.redo', 'edit.delete', 'edit.duplicate', 'edit.copy', 'edit.paste', 'edit.selectAll', 'edit.convertToStage', 'arrange.front', 'arrange.back', 'edit.toggleLock', 'edit.cancel'] },
-  { id: 'view', commands: ['view.zoomIn', 'view.zoomOut', 'view.fit', 'view.zoom100', 'app.focus', 'app.toggleView'] },
-  { id: 'app', commands: ['app.openFolder', 'app.settings'] },
+  { id: 'tools', commands: ['tool.select', 'tool.hand', 'tool.rect', 'tool.diamond', 'tool.ellipse', 'tool.arrow', 'tool.line', 'tool.pencil', 'tool.text', 'tool.sticky', 'tool.image', 'tool.eraser', 'tool.frame', 'tool.stage'] },
+  { id: 'edit', commands: ['edit.undo', 'edit.redo', 'edit.delete', 'edit.duplicate', 'edit.copy', 'edit.paste', 'edit.selectAll', 'edit.convertToStage', 'arrange.front', 'arrange.back', 'edit.toggleLock', 'edit.group', 'edit.ungroup', 'edit.cancel'] },
+  { id: 'arrange', commands: ['align.left', 'align.center', 'align.right', 'align.top', 'align.middle', 'align.bottom', 'distribute.h', 'distribute.v'] },
+  { id: 'view', commands: ['view.zoomIn', 'view.zoomOut', 'view.fit', 'view.zoom100', 'view.toggleSnap', 'app.focus', 'app.toggleView'] },
+  { id: 'app', commands: ['app.palette', 'app.openFolder', 'app.settings'] },
 ];
 
 const STORAGE_KEY = 'pathloom.keymap';

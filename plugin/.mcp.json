@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "pathloom": {
+      "command": "pathloom",
+      "args": ["mcp"]
+    }
+  }
+}

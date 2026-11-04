@@ -32,7 +32,10 @@
     "pencil": "Pencil",
     "text": "Text",
     "stage": "Stage card",
-    "frame": "Frame (phase)"
+    "frame": "Frame (phase)",
+    "sticky": "Sticky note",
+    "image": "Image",
+    "eraser": "Eraser"
   },
   "status": {
     "done": "Done",
@@ -96,7 +99,10 @@
     "ctxLock": "Lock",
     "ctxUnlock": "Unlock",
     "ctxOpenStage": "Open stage",
-    "ctxRename": "Rename"
+    "ctxRename": "Rename",
+    "imageBroken": "Image unavailable",
+    "minimap": "Minimap",
+    "ghostBadge": "Proposed"
   },
   "common": {
     "undo": "Undo",
@@ -126,7 +132,8 @@
   },
   "views": {
     "board": "Board",
-    "list": "List"
+    "list": "List",
+    "overview": "Overview"
   },
   "exec": {
     "on": "Focus",
@@ -163,7 +170,22 @@
     "app.focus": "Focus mode",
     "app.toggleView": "Switch Board / List",
     "app.openFolder": "Open folder",
-    "app.settings": "Settings"
+    "app.settings": "Settings",
+    "app.palette": "Command palette",
+    "tool.sticky": "Sticky note",
+    "tool.image": "Image",
+    "tool.eraser": "Eraser",
+    "edit.group": "Group",
+    "edit.ungroup": "Ungroup",
+    "align.left": "Align left",
+    "align.center": "Align centers horizontally",
+    "align.right": "Align right",
+    "align.top": "Align top",
+    "align.middle": "Align middles vertically",
+    "align.bottom": "Align bottom",
+    "distribute.h": "Distribute horizontally",
+    "distribute.v": "Distribute vertically",
+    "view.toggleSnap": "Snap to grid"
   },
   "settings": {
     "general": "General",
@@ -177,9 +199,51 @@
       "tools": "Tools",
       "edit": "Editing",
       "view": "View",
-      "app": "App"
+      "app": "App",
+      "arrange": "Arrange"
     },
     "addKey": "Add shortcut",
-    "removeKey": "Remove this shortcut"
+    "removeKey": "Remove this shortcut",
+    "renderStyle": "Drawing style",
+    "styles": {
+      "theme": "As in theme",
+      "clean": "Clean",
+      "sketch": "Sketch (hand-drawn)"
+    }
+  },
+  "agent": {
+    "conflict": "This board was changed outside the app while you had unsaved edits.",
+    "takeTheirs": "Take theirs",
+    "keepMine": "Keep mine",
+    "proposal": "{{author}} proposes changes to {{stages}} stages",
+    "more": "{{count}} more",
+    "accept": "Accept",
+    "reject": "Reject",
+    "changed": "Changed outside the app: {{stages}} stages, {{boards}} boards",
+    "undo": "Undo"
+  },
+  "overview": {
+    "subtitle": "What is done, what to do next, what is stuck.",
+    "progress": "Progress",
+    "counts": "{{done}} of {{total}} tasks · {{sdone}} of {{stotal}} stages",
+    "next": "What to do next",
+    "nothingNext": "Nothing is ready right now.",
+    "blocked": "Blocked",
+    "noneBlocked": "Nothing is blocked.",
+    "waits": "waits for {{keys}}",
+    "deadlines": "Deadlines",
+    "noDeadlines": "No deadlines set.",
+    "notes": "Latest notes",
+    "noNotes": "No comments yet."
+  },
+  "palette": {
+    "title": "Command palette",
+    "placeholder": "Search stages, tasks, boards or commands…",
+    "empty": "Nothing found.",
+    "stages": "Stages",
+    "tasks": "Tasks",
+    "boards": "Boards",
+    "actions": "Commands",
+    "nextTheme": "Next theme"
   }
 }

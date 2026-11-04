@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { Board, Editor, StageView, Tool } from '@pathloom/canvas';
 import { api, errorText, type ProjectSnapshot } from './api';
+import type { Proposal } from './agentSync';
 import type { ThemeId } from './theme';
 
 type SaveState = { kind: 'saved' } | { kind: 'saving' } | { kind: 'error'; message: string };
@@ -17,10 +18,19 @@ interface AppStore {
   zoom: number;
   save: SaveState;
   theme: ThemeId;
+  /** Drawing style: follow the theme's default, or force one. */
+  renderStyle: 'theme' | 'clean' | 'sketch';
   error: string | null;
-  view: 'board' | 'list';
+  view: 'board' | 'list' | 'overview';
+  paletteOpen: boolean;
+  snap: boolean;
+  minimap: boolean;
   exec: boolean;
   settingsTab: 'general' | 'keys' | null;
+  proposals: Proposal[];
+  agentChange: { group: number; stages: string[]; boards: string[]; at: number } | null;
+  boardConflict: boolean;
+  dropPendingSave(): void;
 
   enterProject(snap: ProjectSnapshot): Promise<void>;
   closeProject(): Promise<void>;
@@ -31,6 +41,24 @@ interface AppStore {
   boardChanged(board: Board): void;
   flushSave(): Promise<void>;
   set(partial: Partial<AppStore>): void;
+}
+
+function savedTheme(): ThemeId {
+  try {
+    const t = localStorage.getItem('pathloom.theme');
+    return t === 'light' || t === 'paper' || t === 'graphite' ? t : 'graphite';
+  } catch {
+    return 'graphite';
+  }
+}
+
+function savedStyle(): 'theme' | 'clean' | 'sketch' {
+  try {
+    const s = localStorage.getItem('pathloom.renderStyle');
+    return s === 'clean' || s === 'sketch' ? s : 'theme';
+  } catch {
+    return 'theme';
+  }
 }
 
 // The live canvas editor; owned by CanvasView, used by sidebar/inspector for focus and tools.
@@ -63,15 +91,29 @@ export const useApp = create<AppStore>((set, get) => ({
   tool: 'select',
   zoom: 1,
   save: { kind: 'saved' },
-  theme: 'graphite',
+  theme: savedTheme(),
+  renderStyle: savedStyle(),
   error: null,
   view: 'board',
+  paletteOpen: false,
+  snap: false,
+  minimap: false,
   exec: false,
   settingsTab: null,
+  proposals: [],
+  agentChange: null,
+  boardConflict: false,
+
+  dropPendingSave() {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = null;
+    pending = null;
+    set({ save: { kind: 'saved' } });
+  },
 
   async enterProject(snap) {
     await get().flushSave();
-    set({ project: snap, boards: snap.boards, stages: snap.stages, openBoards: [], activeBoard: null, board: null, selectedStage: null, view: 'board', exec: false });
+    set({ project: snap, boards: snap.boards, stages: snap.stages, openBoards: [], activeBoard: null, board: null, selectedStage: null, view: 'board', exec: false, proposals: [], agentChange: null, boardConflict: false });
     const first = snap.boards.includes('roadmap') ? 'roadmap' : snap.boards[0];
     if (first) await get().openBoard(first);
   },

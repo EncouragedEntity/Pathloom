@@ -1,6 +1,6 @@
 import type { ThemeTokens } from '@pathloom/canvas';
 
-export type ThemeId = 'graphite' | 'paper';
+export type ThemeId = 'graphite' | 'light' | 'paper';
 
 export interface AppTheme {
   id: ThemeId;
@@ -25,6 +25,15 @@ export const THEMES: Record<ThemeId, AppTheme> = {
       edge: '#4b5059', grid: '#2a2d33', radiusCard: 12, ...fonts,
     },
   },
+  light: {
+    id: 'light', mode: 'light', style: 'clean',
+    tokens: {
+      bg: '#f7f7f8', panel: '#ffffff', card: '#ffffff', card2: '#f1f1f3',
+      border: '#e4e4e7', border2: '#d4d4d8', text: '#18181b', text2: '#3f3f46', muted: '#71717a',
+      accent: '#c27c0e', onAccent: '#ffffff', ok: '#16a34a', warn: '#b45309', bad: '#dc2626',
+      edge: '#b8b8c0', grid: '#e2e2e6', radiusCard: 12, ...fonts,
+    },
+  },
   paper: {
     id: 'paper', mode: 'light', style: 'sketch',
     tokens: {
@@ -47,3 +56,7 @@ export function applyCssVars(t: ThemeTokens): void {
   };
   for (const [k, v] of Object.entries(map)) s.setProperty(k, v);
 }
+
+export const THEME_NAMES: Record<ThemeId, string> = { graphite: 'Graphite', light: 'Light', paper: 'Warm paper' };
+export const THEME_ORDER: ThemeId[] = ['graphite', 'light', 'paper'];
+export const nextTheme = (t: ThemeId): ThemeId => THEME_ORDER[(THEME_ORDER.indexOf(t) + 1) % THEME_ORDER.length];
