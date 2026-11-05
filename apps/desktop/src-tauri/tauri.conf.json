@@ -37,6 +37,11 @@
     "externalBin": [
       "binaries/pathloom"
     ],
+    "windows": {
+      "nsis": {
+        "installerHooks": "./windows/hooks.nsh"
+      }
+    },
     "publisher": "XxArDy",
     "shortDescription": "Whiteboard and roadmap for projects built with AI",
     "category": "Productivity",

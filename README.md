@@ -55,6 +55,8 @@ Everything is local. No account, no cloud.
 
 Download the installer for your system from [Releases](https://github.com/XxArDy/Pathloom/releases) (Windows `.exe` / `.msi`, macOS `.dmg`, Linux `.AppImage` / `.deb`).
 
+To update, run the new installer over the old one. On Windows prefer the `.exe`: AI agent sessions that are using Pathloom keep working during the update and pick up the new version when they restart.
+
 > Builds are not code-signed yet, so Windows SmartScreen and macOS Gatekeeper will warn on first launch.
 
 The `pathloom` command-line tool is installed next to the app. **Settings → AI agents** shows its path and ready-to-copy commands.
