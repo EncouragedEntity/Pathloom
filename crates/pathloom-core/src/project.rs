@@ -1,4 +1,5 @@
 use crate::error::{Error, Result, parse_err};
+use crate::evidence::Evidence;
 use crate::fsutil::write_atomic;
 use crate::keygen::generate_key;
 use crate::model::*;
@@ -31,6 +32,23 @@ pub(crate) fn check_key(key: &str) -> Result<()> {
 }
 
 /// Append a task with the next free `<KEY>-NN` id.
+/// Artifact reference: project-relative path (no `..`, not absolute) or an http(s) link; 1-300 chars, one line.
+pub(crate) fn check_artifact(a: &str) -> Result<String> {
+    let a = a.trim().replace('\\', "/");
+    let bad = || Error::InvalidSpec(format!("artifact `{a}` must be a project-relative path or an http(s) link"));
+    if !(1..=300).contains(&a.chars().count()) || a.chars().any(char::is_control) {
+        return Err(bad());
+    }
+    let lower = a.to_ascii_lowercase();
+    if lower.starts_with("http://") || lower.starts_with("https://") {
+        return if a.contains(' ') { Err(bad()) } else { Ok(a) };
+    }
+    if a.starts_with('/') || a.contains(':') || a.split('/').any(|c| c == "..") {
+        return Err(bad());
+    }
+    Ok(a)
+}
+
 pub(crate) fn push_task(s: &mut Stage, title: &str) {
     let prefix = format!("{}-", s.key);
     let max = s.tasks.iter().filter_map(|t| t.id.strip_prefix(&prefix)?.parse::<u32>().ok()).max().unwrap_or(0);
@@ -57,6 +75,7 @@ pub(crate) fn mark_done(s: &mut Stage, task_id: &str, done: bool) -> Result<()> 
         None => t.sub.iter_mut().for_each(|x| x.done = done),
     }
     t.done = if t.sub.is_empty() { done } else { t.sub.iter().all(|x| x.done) };
+    s.prune_evidence();
     Ok(())
 }
 
@@ -78,6 +97,7 @@ impl Project {
             name: name.into(),
             plan_dir: plan_dir.into(),
             agent_changes: AgentChanges::Auto,
+            require_evidence: false,
         };
         let text = toml::to_string(&config).map_err(|e| parse_err(&cfg_path, e))?;
         write_atomic(&cfg_path, text.as_bytes())?;
@@ -93,8 +113,17 @@ impl Project {
     /// Switches how agent changes are applied (`auto` writes files, `review` creates proposals)
     /// and saves `.pathloom/project.toml`.
     pub fn set_agent_changes(&mut self, mode: AgentChanges) -> Result<()> {
+        self.update_config(|c| c.agent_changes = mode)
+    }
+
+    /// Whether agents must attach passing evidence to mark tasks done; saves `.pathloom/project.toml`.
+    pub fn set_require_evidence(&mut self, on: bool) -> Result<()> {
+        self.update_config(|c| c.require_evidence = on)
+    }
+
+    fn update_config(&mut self, f: impl FnOnce(&mut ProjectConfig)) -> Result<()> {
         let mut config = self.config.clone();
-        config.agent_changes = mode;
+        f(&mut config);
         let path = self.root.join(CONFIG);
         let text = toml::to_string(&config).map_err(|e| parse_err(&path, e))?;
         write_atomic(&path, text.as_bytes())?;
@@ -295,8 +324,25 @@ impl Project {
             if let Some(b) = meta.branch {
                 s.branch = opt(b);
             }
+            if let Some(c) = meta.check {
+                s.check = opt(c.replace(['\r', '\n'], " "));
+            }
             Ok(())
         })
+    }
+
+    /// Absolute path of a project-relative artifact that exists inside the project (links and escapes fail).
+    pub fn artifact_path(&self, artifact: &str) -> Result<PathBuf> {
+        let a = check_artifact(artifact)?;
+        if a.contains("://") {
+            return Err(Error::InvalidSpec(format!("artifact `{a}` is a link, not a file")));
+        }
+        let root = self.root.canonicalize()?;
+        let full = root.join(&a).canonicalize().map_err(|_| Error::NotFound(format!("file {a}")))?;
+        if !full.starts_with(&root) {
+            return Err(Error::InvalidSpec(format!("artifact `{a}` is outside the project")));
+        }
+        Ok(full)
     }
 
     /// Raw text of a stage file, for the "File" tab.
@@ -347,8 +393,57 @@ impl Project {
 
     /// Marking a task done also releases the claims on it and on its subtasks.
     pub fn set_task_done(&self, task_id: &str, done: bool) -> Result<Stage> {
+        self.set_task_done_with(task_id, done, None)
+    }
+
+    /// Record the result of a gate's check under the stage key. A passing result makes the gate done;
+    /// a failing one removes the previous result (the gate is open again) and is returned as `Ok(false)`.
+    pub fn set_gate_result(&self, key: &str, evidence: Evidence) -> Result<(Stage, bool)> {
+        let mut e = evidence.normalize()?;
+        if e.at.is_empty() {
+            e.at = crate::fsutil::now_rfc3339();
+        }
+        let passed = e.passed();
+        let s = self.edit_stage(key, |s| {
+            if s.kind != StageKind::Gate {
+                return Err(Error::InvalidSpec(format!("{key} is not a gate (kind: gate)")));
+            }
+            if passed {
+                s.evidence.insert(key.to_string(), e);
+            } else {
+                s.evidence.remove(key);
+            }
+            Ok(())
+        })?;
+        Ok((s, passed))
+    }
+
+    /// Like [`Project::set_task_done`] with proof of the check that was run. Evidence goes only with
+    /// `done = true` and must have exit code 0; `at` is filled in when empty. Reopening a task drops its evidence.
+    pub fn set_task_done_with(&self, task_id: &str, done: bool, evidence: Option<Evidence>) -> Result<Stage> {
+        let ev = evidence.map(Evidence::normalize).transpose()?;
+        if let Some(e) = &ev {
+            if !done {
+                return Err(Error::InvalidSpec("evidence goes only with done=true".into()));
+            }
+            if !e.passed() {
+                return Err(Error::InvalidSpec(format!(
+                    "evidence for {task_id} has exit_code {}: the check failed, so the task stays open",
+                    e.exit_code
+                )));
+            }
+        }
         let key = task_id.split('-').next().unwrap_or("");
-        let s = self.edit_stage(key, |s| mark_done(s, task_id, done))?;
+        let s = self.edit_stage(key, |s| {
+            mark_done(s, task_id, done)?;
+            if let Some(mut e) = ev {
+                if e.at.is_empty() {
+                    e.at = crate::fsutil::now_rfc3339();
+                }
+                s.evidence.insert(task_id.to_string(), e);
+            }
+            Ok(())
+        })?;
         if done {
             self.release_done_claims(std::slice::from_ref(&s));
         }

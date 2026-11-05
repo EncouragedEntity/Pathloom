@@ -12,7 +12,11 @@ export interface ProjectSnapshot {
 }
 
 /** Partial stage update; omitted fields stay unchanged, '' clears due/branch. */
+export interface UsageTotals { tokens_in: number; tokens_out: number; cost_usd?: number }
+export interface UsageSummary { total: UsageTotals; by_agent: Record<string, UsageTotals>; by_stage: Record<string, UsageTotals> }
+
 export interface StageMeta {
+  check?: string;
   title?: string;
   kind?: StageView['kind'];
   who?: StageView['who'];
@@ -40,13 +44,17 @@ export const api = {
   stageCreate: (title: string) => invoke<StageView>('stage_create', { title }),
   taskToggle: (taskId: string) => invoke<StageView[]>('task_toggle', { taskId }),
   taskAdd: (key: string, title: string) => invoke<StageView[]>('task_add', { key, title }),
+  gateRun: (key: string) => invoke<StageView[]>('gate_run', { key }),
+  artifactOpen: (path: string) => invoke<void>('artifact_open', { path }),
+  usageSummary: () => invoke<UsageSummary>('usage_summary'),
   stageUpdate: (key: string, meta: StageMeta) => invoke<StageView[]>('stage_update', { key, meta }),
   stageSource: (key: string) => invoke<string>('stage_source', { key }),
   stageDelete: (key: string) => invoke<StageView[]>('stage_delete', { key }),
   taskRename: (taskId: string, title: string) => invoke<StageView[]>('task_rename', { taskId, title }),
   taskRemove: (taskId: string) => invoke<StageView[]>('task_remove', { taskId }),
   subtaskAdd: (taskId: string, title: string) => invoke<StageView[]>('subtask_add', { taskId, title }),
-  agentSetup: () => invoke<{ cliPath: string | null; agentChanges: 'auto' | 'review' }>('agent_setup'),
+  agentSetup: () => invoke<{ cliPath: string | null; agentChanges: 'auto' | 'review'; requireEvidence: boolean }>('agent_setup'),
+  setRequireEvidence: (on: boolean) => invoke<void>('set_require_evidence', { on }),
   setAgentChanges: (review: boolean) => invoke<void>('set_agent_changes', { review }),
   activity: (limit: number, stage?: string) => invoke<LogEntry[]>('activity', { limit, stage: stage ?? null }),
   agentsList: () => invoke<AgentProfile[]>('agents_list'),

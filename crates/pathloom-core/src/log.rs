@@ -12,7 +12,44 @@ const OLD_LOG_FILE: &str = ".pathloom/log/agent.1.jsonl";
 const MAX_LOG_BYTES: u64 = 5 * 1024 * 1024;
 
 /// One logged action. `source` is `mcp` | `cli` | `app`.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+/// Tokens and money an agent reports for its own work (Pathloom only shows it; it never counts or calls models).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(default)]
+pub struct Usage {
+    pub tokens_in: u64,
+    pub tokens_out: u64,
+    /// US dollars.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cost_usd: Option<f64>,
+}
+
+/// Usage totals per agent and per stage (from the whole log).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct UsageSummary {
+    pub total: Usage,
+    pub by_agent: std::collections::BTreeMap<String, Usage>,
+    pub by_stage: std::collections::BTreeMap<String, Usage>,
+}
+
+impl Usage {
+    fn add(&mut self, o: &Usage) {
+        self.tokens_in = self.tokens_in.saturating_add(o.tokens_in);
+        self.tokens_out = self.tokens_out.saturating_add(o.tokens_out);
+        if let Some(c) = o.cost_usd {
+            *self.cost_usd.get_or_insert(0.0) += c;
+        }
+    }
+
+    /// Reject negative or non-finite cost.
+    pub fn validate(&self) -> Result<()> {
+        if self.cost_usd.is_some_and(|c| !c.is_finite() || c < 0.0) {
+            return Err(crate::error::Error::InvalidSpec("cost_usd must be a non-negative number".into()));
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(default)]
 pub struct LogEntry {
     pub at: String,
@@ -26,6 +63,9 @@ pub struct LogEntry {
     /// External client session the action was done from (optional).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session: Option<crate::session::SessionRef>,
+    /// Tokens / cost the client reported with this action (optional).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage: Option<Usage>,
 }
 
 impl Project {
@@ -53,6 +93,27 @@ impl Project {
         line.push('\n');
         std::fs::OpenOptions::new().create(true).append(true).open(&path)?.write_all(line.as_bytes())?;
         Ok(())
+    }
+
+    /// Sum of all reported usage (current and rotated log), per agent and per stage. A usage entry that
+    /// touches several stages is split evenly between them.
+    pub fn usage_summary(&self) -> Result<UsageSummary> {
+        let mut out = UsageSummary::default();
+        for e in self.read_log(0, None)? {
+            let Some(u) = &e.usage else { continue };
+            out.total.add(u);
+            out.by_agent.entry(e.author.clone()).or_default().add(u);
+            let n = e.stages.len().max(1) as u64;
+            for k in &e.stages {
+                let part = Usage {
+                    tokens_in: u.tokens_in / n,
+                    tokens_out: u.tokens_out / n,
+                    cost_usd: u.cost_usd.map(|c| c / n as f64),
+                };
+                out.by_stage.entry(k.clone()).or_default().add(&part);
+            }
+        }
+        Ok(out)
     }
 
     /// Newest entries first, at most `limit` (0 = all), only those touching `stage` when given.

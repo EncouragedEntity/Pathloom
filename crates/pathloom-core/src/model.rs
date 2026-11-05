@@ -16,7 +16,7 @@ macro_rules! lower_enum {
     };
 }
 
-lower_enum!(StageKind { Stage = "stage", Milestone = "milestone" } default Stage);
+lower_enum!(StageKind { Stage = "stage", Milestone = "milestone", Gate = "gate" } default Stage);
 lower_enum!(Priority { Low = "low", Med = "med", High = "high" } default Med);
 lower_enum!(AgentChanges { Auto = "auto", Review = "review" } default Auto);
 lower_enum!(Status { Done = "done", Active = "active", Ready = "ready", Blocked = "blocked" } default Ready);
@@ -132,6 +132,28 @@ impl schemars::JsonSchema for Who {
 }
 
 impl Stage {
+    /// Ids of the done tasks and subtasks.
+    pub fn done_task_ids(&self) -> std::collections::HashSet<&str> {
+        self.tasks
+            .iter()
+            .flat_map(|t| std::iter::once(t).chain(t.sub.iter()))
+            .filter(|t| t.is_done())
+            .map(|t| t.id.as_str())
+            .collect()
+    }
+
+    /// Drop evidence of tasks that are no longer done or no longer exist (a gate keeps its own, keyed by the stage key).
+    pub(crate) fn prune_evidence(&mut self) {
+        let done: std::collections::HashSet<String> = self.done_task_ids().into_iter().map(String::from).collect();
+        let key = self.key.clone();
+        self.evidence.retain(|k, _| done.contains(k) || *k == key);
+    }
+
+    /// Gate result: the passing check stored under the stage key.
+    pub fn gate_passed(&self) -> bool {
+        self.kind == StageKind::Gate && self.evidence.get(&self.key).is_some_and(crate::evidence::Evidence::passed)
+    }
+
     /// New empty stage (kind=stage, who=ai, priority=med).
     pub fn new(key: &str, title: &str) -> Self {
         Stage {
@@ -149,6 +171,9 @@ impl Stage {
             tasks: vec![],
             comments: vec![],
             sessions: vec![],
+            evidence: std::collections::BTreeMap::new(),
+            artifacts: vec![],
+            check: None,
             extra: Map::new(),
             layout: Layout::default(),
         }
@@ -218,6 +243,15 @@ pub struct Stage {
     /// External client sessions that worked on this stage (oldest first, at most 20).
     #[serde(default)]
     pub sessions: Vec<crate::session::SessionRef>,
+    /// Proof per done task id (the check that was run and its result).
+    #[serde(default)]
+    pub evidence: std::collections::BTreeMap<String, crate::evidence::Evidence>,
+    /// Hand-off files of this stage (spec, plan, review): project-relative paths or http(s) links.
+    #[serde(default)]
+    pub artifacts: Vec<String>,
+    /// `kind: gate`: the command that must pass (exit code 0) for the gate to be done, e.g. `npm test`.
+    #[serde(default)]
+    pub check: Option<String>,
     /// Unknown frontmatter keys (not exposed to the UI).
     #[serde(skip)]
     pub(crate) extra: Map<String, Value>,
@@ -254,6 +288,9 @@ pub struct ProjectConfig {
     pub name: String,
     pub plan_dir: String,
     pub agent_changes: AgentChanges,
+    /// Agents (MCP) must attach passing evidence to mark tasks of `kind: stage` done.
+    #[serde(default)]
+    pub require_evidence: bool,
 }
 
 /// Partial update of a stage's frontmatter. `None` leaves a field unchanged;
@@ -267,6 +304,8 @@ pub struct StageMeta {
     pub priority: Option<Priority>,
     pub due: Option<String>,
     pub branch: Option<String>,
+    /// Gate command; empty string clears.
+    pub check: Option<String>,
 }
 
 #[cfg(test)]

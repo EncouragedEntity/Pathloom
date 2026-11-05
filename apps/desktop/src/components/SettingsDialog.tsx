@@ -154,8 +154,8 @@ function CopyLine({ text }: { text: string }) {
 function Agents() {
   const { t } = useTranslation();
   const { project, set } = useApp();
-  const [setup, setSetup] = useState<{ cliPath: string | null; agentChanges: 'auto' | 'review' } | null>(null);
-  useEffect(() => { api.agentSetup().then(setSetup).catch(() => setSetup({ cliPath: null, agentChanges: 'auto' })); }, []);
+  const [setup, setSetup] = useState<{ cliPath: string | null; agentChanges: 'auto' | 'review'; requireEvidence: boolean } | null>(null);
+  useEffect(() => { api.agentSetup().then(setSetup).catch(() => setSetup({ cliPath: null, agentChanges: 'auto', requireEvidence: false })); }, []);
   if (!setup) return null;
   const cli = setup.cliPath ? (setup.cliPath.includes(' ') ? '"' + setup.cliPath + '"' : setup.cliPath) : 'pathloom';
   const json = JSON.stringify({ mcpServers: { pathloom: { command: setup.cliPath ?? 'pathloom', args: ['mcp'] } } }, null, 2);
@@ -168,6 +168,12 @@ function Agents() {
       <label className="radio"><input type="radio" checked={setup.agentChanges === 'auto'} onChange={() => void toggle(false)} />{t('settings.modeAuto')}</label>
       <label className="radio"><input type="radio" checked={setup.agentChanges === 'review'} onChange={() => void toggle(true)} />{t('settings.modeReview')}</label>
       <p className="hint">{t('settings.modeHint', { project: project?.name ?? '' })}</p>
+      <label className="radio">
+        <input type="checkbox" checked={setup.requireEvidence}
+          onChange={(e) => { const on = e.currentTarget.checked; api.setRequireEvidence(on).then(() => setSetup({ ...setup, requireEvidence: on })).catch((err) => set({ error: errorText(err) })); }} />
+        {t('settings.requireEvidence')}
+      </label>
+      <p className="hint">{t('settings.requireEvidenceHint')}</p>
       <h3>{t('settings.claudeCode')}</h3>
       <p className="hint">{t('settings.claudeHint')}</p>
       <CopyLine text={'claude mcp add pathloom -- ' + cli + ' mcp'} />

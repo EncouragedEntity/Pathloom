@@ -6,7 +6,7 @@ mod ops;
 mod schema;
 
 use clap::Parser;
-use cli::{AgentCmd, BoardCmd, Cli, Cmd, ProposalCmd, SkillCmd, StageCmd, TaskCmd};
+use cli::{AgentCmd, BoardCmd, Cli, Cmd, GateCmd, ProposalCmd, SkillCmd, StageCmd, TaskCmd};
 use ops::{ApiError, ApiResult};
 use pathloom_core::events::{Event, EventWatcher};
 use pathloom_core::{ApplySpec, DepSpec, Place, Project, SessionRef, StageSpec};
@@ -27,6 +27,31 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// Run `cmd` through the system shell with inherited output and record it as evidence.
+fn run_check(cmd: &str, summary: &Option<String>, log: &Option<String>) -> ApiResult<pathloom_core::Evidence> {
+    let mut c = if cfg!(windows) {
+        let mut c = std::process::Command::new("cmd");
+        c.args(["/C", cmd]);
+        c
+    } else {
+        let mut c = std::process::Command::new("sh");
+        c.args(["-c", cmd]);
+        c
+    };
+    let start = std::time::Instant::now();
+    let status = c.status().map_err(|e| ApiError::new("IO_ERROR", format!("cannot run `{cmd}`: {e}")))?;
+    Ok(pathloom_core::Evidence {
+        command: cmd.into(),
+        // No code = killed by a signal: count as failure.
+        exit_code: status.code().unwrap_or(-1),
+        duration_ms: Some(u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX)),
+        summary: summary.clone(),
+        log: log.clone(),
+        at: String::new(),
+        by: String::new(),
+    })
 }
 
 fn open(cli: &Cli) -> ApiResult<Project> {
@@ -234,14 +259,30 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
                 if id.is_empty() { fmt_submit(&v) } else { format!("Added {id} {title}") }
             });
         }
-        Cmd::Task(TaskCmd::Done { task_id }) | Cmd::Task(TaskCmd::Undo { task_id }) => {
+        Cmd::Task(TaskCmd::Done { task_id, .. }) | Cmd::Task(TaskCmd::Undo { task_id }) => {
             let done = matches!(cli.command, Cmd::Task(TaskCmd::Done { .. }));
-            let v = ops::set_task(&open(cli)?, &actor, if done { "task done" } else { "task undo" }, task_id, done)?;
+            let p = open(cli)?;
+            let evidence = match &cli.command {
+                Cmd::Task(TaskCmd::Done { run: Some(cmd), summary, log, .. }) => Some(run_check(cmd, summary, log)?),
+                _ => None,
+            };
+            if let Some(e) = evidence.as_ref().filter(|e| !e.passed()) {
+                return Err(ApiError::new(
+                    "CHECK_FAILED",
+                    format!("`{}` exited with {}: {task_id} stays open", e.command, e.exit_code),
+                ));
+            }
+            let verified = evidence.is_some();
+            let v = ops::set_task(&p, &actor, if done { "task done" } else { "task undo" }, task_id, done, evidence, false)?;
             emit(cli, &v, || {
                 let st = &v["stage"];
                 format!(
                     "{task_id} {} · {} is {} ({}/{})",
-                    if done { "done" } else { "reopened" },
+                    match (done, verified) {
+                        (true, true) => "done (verified)",
+                        (true, false) => "done",
+                        _ => "reopened",
+                    },
                     s(st, "key"),
                     s(st, "status"),
                     st["progress"]["done"],
@@ -260,6 +301,67 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
             let v = ops::claim_task(&open(cli)?, &actor, task_id, ops::parse_ttl(ttl)?, note)?;
             emit(cli, &v, || format!("Claimed {task_id} for {} until {}", actor.name, s(&v, "expires_at")));
         }
+        Cmd::Task(TaskCmd::Heartbeat { task_id, note }) => {
+            let v = ops::heartbeat(&open(cli)?, &actor, task_id.as_deref(), note.as_deref())?;
+            emit(cli, &v, || {
+                let n = v["claims"].as_array().map_or(0, Vec::len);
+                if n == 0 { "No claims to refresh.".into() } else { format!("Refreshed {n} claim(s) of {}", actor.name) }
+            });
+        }
+        Cmd::Gate(GateCmd::Run { key }) => {
+            let p = open(cli)?;
+            let st = p.load_stage(key)?;
+            let check = st.check.clone().ok_or_else(|| ApiError::new("INVALID_SPEC", format!("{key} has no `check` command")))?;
+            let ev = run_check(&check, &None, &None)?;
+            let v = ops::set_gate(&p, &actor, key, ev)?;
+            emit(cli, &v, || {
+                if v["passed"] == true { format!("Gate {key} passed") } else { format!("Gate {key} FAILED: `{check}`") }
+            });
+            if v["passed"] != true {
+                return Ok(ExitCode::FAILURE);
+            }
+        }
+        Cmd::Usage { tokens_in, tokens_out, cost, stage, note } => {
+            let p = open(cli)?;
+            let v = if tokens_in.is_some() || tokens_out.is_some() || cost.is_some() {
+                let u = pathloom_core::Usage { tokens_in: tokens_in.unwrap_or(0), tokens_out: tokens_out.unwrap_or(0), cost_usd: *cost };
+                ops::report_usage(&p, &actor, u, stage.as_deref(), note)?
+            } else {
+                ops::usage_summary(&p)?
+            };
+            emit(cli, &v, || {
+                if v["recorded"] == true {
+                    return "Usage recorded.".into();
+                }
+                let row = |name: &str, u: &Value| {
+                    let cost = u["cost_usd"].as_f64().map_or(String::new(), |c| format!("  ${c:.2}"));
+                    format!("{name:<16} {:>10} in {:>10} out{cost}", u["tokens_in"], u["tokens_out"])
+                };
+                let mut out = vec![row("total", &v["total"])];
+                for (title, k) in [("by agent:", "by_agent"), ("by stage:", "by_stage")] {
+                    if let Some(m) = v[k].as_object().filter(|m| !m.is_empty()) {
+                        out.push(title.into());
+                        out.extend(m.iter().map(|(n, u)| row(&format!("  {n}"), u)));
+                    }
+                }
+                out.join("\n")
+            });
+        }
+        Cmd::Import { format: _, file, prefix, board, dry_run, direct } => {
+            let p = open(cli)?;
+            let v = ops::import(&p, &actor, &read_spec_text(file)?, prefix.as_deref(), board.as_deref(), *dry_run, *direct)?;
+            emit(cli, &v, || {
+                let i = &v["import"];
+                format!(
+                    "Spec Kit \"{}\": {} stage(s) {}, {} task(s)\n{}",
+                    s(i, "feature"),
+                    list(i, "stages").len(),
+                    list(i, "stages").join(", "),
+                    i["tasks"],
+                    fmt_submit(&v)
+                )
+            });
+        }
         Cmd::Task(TaskCmd::Release { task_id, force }) => {
             let v = ops::release_task(&open(cli)?, &actor, task_id, *force)?;
             emit(cli, &v, || format!("Released {task_id}"));
@@ -271,7 +373,10 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
                     .as_array()
                     .into_iter()
                     .flatten()
-                    .map(|c| format!("{:<9} {:<16} until {}  {}", s(c, "task_id"), s(c, "agent"), s(c, "expires_at"), s(c, "note")))
+                    .map(|c| {
+                        let silent = if c["silent"] == true { format!("  [silent since {}]", s(c, "heartbeat_at")) } else { String::new() };
+                        format!("{:<9} {:<16} until {}  {}{silent}", s(c, "task_id"), s(c, "agent"), s(c, "expires_at"), s(c, "note"))
+                    })
                     .collect();
                 if rows.is_empty() { "No active claims.".into() } else { rows.join("\n") }
             });

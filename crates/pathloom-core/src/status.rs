@@ -27,6 +27,7 @@ impl<'a> Ctx<'a> {
         }
         let d = match s.kind {
             StageKind::Stage => tasks_done(s),
+            StageKind::Gate => s.gate_passed() && s.tasks.iter().all(Task::is_done),
             StageKind::Milestone => {
                 let hard = self.hard_deps(s);
                 !hard.is_empty() && hard.into_iter().all(|k| self.is_done(k))
@@ -79,10 +80,14 @@ pub fn stage_views(stages: &[Stage]) -> Vec<StageView> {
         .iter()
         .map(|s| StageView {
             status: statuses.get(&s.key).copied().unwrap_or_default(),
-            progress: (
-                s.tasks.iter().filter(|t| t.is_done()).count() as u32,
-                s.tasks.len() as u32,
-            ),
+            // A gate's check counts as one more item.
+            progress: {
+                let gate = u32::from(s.kind == StageKind::Gate);
+                (
+                    s.tasks.iter().filter(|t| t.is_done()).count() as u32 + u32::from(s.gate_passed()),
+                    s.tasks.len() as u32 + gate,
+                )
+            },
             stage: s.clone(),
             claims: Vec::new(),
         })

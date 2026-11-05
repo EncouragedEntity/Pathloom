@@ -70,7 +70,8 @@
     "kind": "Type",
     "kinds": {
       "stage": "Stage",
-      "milestone": "Milestone"
+      "milestone": "Milestone",
+      "gate": "Gate (check must pass)"
     },
     "addSubtask": "Add subtask",
     "removeTask": "Remove task",
@@ -227,7 +228,9 @@
     "otherHint": "Add this to the client's MCP config:",
     "cli": "Command line",
     "cliFound": "The pathloom CLI is installed next to the app:",
-    "cliMissing": "The CLI was not found next to the app (dev build). Build it with npm run build:cli."
+    "cliMissing": "The CLI was not found next to the app (dev build). Build it with npm run build:cli.",
+    "requireEvidence": "Agents must prove a task is done",
+    "requireEvidenceHint": "An agent can close a task only with a passing check (command and exit code 0). Your own clicks are not affected."
   },
   "agent": {
     "conflict": "This board was changed outside the app while you had unsaved edits.",
@@ -272,7 +275,9 @@
     "workingNow": "Working right now",
     "nobody": "No agent has taken a task.",
     "activity": "Agent activity",
-    "noActivity": "No agent actions yet."
+    "noActivity": "No agent actions yet.",
+    "silent": "silent",
+    "silentHint": "{{agent}}: last sign of life {{ago}}, maybe stuck"
   },
   "time": {
     "now": "just now",
@@ -288,5 +293,23 @@
     "copy": "Copy session id",
     "open": "Open session",
     "confirm": "Open this link in its app?\n{{url}}"
+  },
+  "evidence": {
+    "verified": "Verified"
+  },
+  "gate": {
+    "check": "Check",
+    "run": "Run check",
+    "running": "Running…",
+    "notRun": "Not checked yet",
+    "noCheck": "Set the check command (e.g. npm test)",
+    "confirm": "Run this command in the project folder?\n{{cmd}}"
+  },
+  "artifacts": {
+    "title": "Artifacts",
+    "open": "Open"
+  },
+  "usage": {
+    "title": "Spending"
   }
 }

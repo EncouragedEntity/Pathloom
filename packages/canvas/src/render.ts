@@ -688,7 +688,7 @@ export class Renderer {
     if (far) return;
     // tasks
     const ci = this.claimsOf(stage);
-    for (const row of L.tasks) this.drawTaskRow(ctx, row.task, row.y, s, rowClaim(ci, row.task));
+    for (const row of L.tasks) this.drawTaskRow(ctx, row.task, row.y, s, rowClaim(ci, row.task), !!stage.evidence?.[row.task.id]);
     if (L.hiddenTasks > 0) {
       ctx.font = fontOf(11, t.fontUi); ctx.fillStyle = t.muted;
       ctx.fillText(s.labels.moreTasks.replace('{n}', String(L.hiddenTasks)), px + CARD.chk + 7, L.moreY + CARD.taskGap + CARD.taskH / 2);
@@ -708,7 +708,7 @@ export class Renderer {
     }
   }
 
-  private drawTaskRow(ctx: CanvasRenderingContext2D, task: CardLayout['tasks'][number]['task'], y: number, s: RenderState, claim?: { agent: string }) {
+  private drawTaskRow(ctx: CanvasRenderingContext2D, task: CardLayout['tasks'][number]['task'], y: number, s: RenderState, claim?: { agent: string; silent?: boolean }, verified = false) {
     const t = s.theme, px = CARD.padX, cy = y + CARD.taskH / 2, done = taskDone(task);
     const cx = px + CARD.chk / 2 + 1;
     ctx.beginPath(); ctx.arc(cx, cy, CARD.chk / 2 - 0.5, 0, Math.PI * 2);
@@ -716,6 +716,8 @@ export class Renderer {
       ctx.fillStyle = t.ok; ctx.fill();
       ctx.strokeStyle = t.onAccent; ctx.lineWidth = 1.6; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       ctx.beginPath(); ctx.moveTo(cx - 3.2, cy + 0.2); ctx.lineTo(cx - 0.8, cy + 2.6); ctx.lineTo(cx + 3.4, cy - 2.4); ctx.stroke();
+      // verified (evidence attached): a second ring around the check
+      if (verified) { ctx.beginPath(); ctx.arc(cx, cy, CARD.chk / 2 + 2, 0, Math.PI * 2); ctx.strokeStyle = t.ok; ctx.lineWidth = 1.2; ctx.stroke(); }
     } else { ctx.strokeStyle = t.border2; ctx.lineWidth = 1.5; ctx.stroke(); }
     let x = px + CARD.chk + 7;
     ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
@@ -724,7 +726,9 @@ export class Renderer {
     x += measureText(task.id, ctx.font) + 7;
     let right = CARD_W - px;
     if (claim) {
-      const { name, color: col, avatar } = resolveAgent(claim.agent, s.agents, t);
+      const r = resolveAgent(claim.agent, s.agents, t), { name, avatar } = r;
+      // silent agent (no sign of life for 10 min): warning colour instead of its own
+      const col = claim.silent ? t.warn : r.color;
       ctx.font = fontOf(10, t.fontUi, 600);
       const txt = ellipsize(name, 64, (q) => measureText(q, ctx.font)), avW = avatarWidth(avatar, (q) => measureText(q, ctx.font)), cw = measureText(txt, ctx.font) + 10 + avW;
       ctx.beginPath(); ctx.roundRect(right - cw, cy - 7, cw, 14, 5); ctx.fillStyle = withAlpha(col, 0.16); ctx.fill();
@@ -753,7 +757,7 @@ export class Renderer {
     ctx.restore();
   }
 
-  private claimCache = new WeakMap<StageView, Map<string, { taskId: string; agent: string; expiresAt: string }>>();
+  private claimCache = new WeakMap<StageView, Map<string, NonNullable<StageView['claims']>[number]>>();
   private claimsOf(stage: StageView) {
     let m = this.claimCache.get(stage);
     if (!m) this.claimCache.set(stage, (m = claimIndex(stage)));
@@ -870,7 +874,7 @@ export class Renderer {
       for (const p of o.pulses) {
         const cl = p.stage.claims![0], L = s.labels;
         const text = { done: L.statusDone, active: L.statusActive, ready: L.statusReady, blocked: L.statusBlocked }[p.stage.status];
-        ctx.fillStyle = resolveAgent(cl.agent, s.agents, t).color;
+        ctx.fillStyle = cl.silent ? t.warn : resolveAgent(cl.agent, s.agents, t).color;
         ctx.beginPath(); ctx.arc(p.el.x + CARD_W - CARD.padX - pillWidth(text, t) - 9, p.el.y + CARD.padTop + CARD.headH / 2, 3.5, 0, Math.PI * 2); ctx.fill();
       }
       ctx.restore();

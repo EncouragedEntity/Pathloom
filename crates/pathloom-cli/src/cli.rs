@@ -118,6 +118,41 @@ pub enum Cmd {
     /// Agent Skills export
     #[command(subcommand)]
     Skill(SkillCmd),
+    /// Gate stages (`kind: gate`): run the check
+    #[command(subcommand)]
+    Gate(GateCmd),
+    /// Token / cost totals reported by agents. With --tokens-in/--tokens-out it records a report instead
+    Usage {
+        #[arg(long)]
+        tokens_in: Option<u64>,
+        #[arg(long)]
+        tokens_out: Option<u64>,
+        /// US dollars
+        #[arg(long)]
+        cost: Option<f64>,
+        /// Stage the work was for
+        #[arg(long, value_name = "KEY")]
+        stage: Option<String>,
+        #[arg(long, default_value = "")]
+        note: String,
+    },
+    /// Import another tool's task list as stages (Spec Kit: specs/<feature>/tasks.md). Re-import updates them
+    Import {
+        format: ImportFormat,
+        /// File, or `-` for stdin
+        file: String,
+        /// Stage key prefix, 1-5 letters (default: initials of the feature name)
+        #[arg(long)]
+        prefix: Option<String>,
+        /// Board for the new cards (default roadmap)
+        #[arg(long)]
+        board: Option<String>,
+        #[arg(long)]
+        dry_run: bool,
+        /// Write directly even when the project is in review mode
+        #[arg(long)]
+        direct: bool,
+    },
     /// Run the MCP server on stdio
     Mcp {
         /// Expose read-only tools only
@@ -176,8 +211,18 @@ pub enum TaskCmd {
         #[arg(long)]
         direct: bool,
     },
+    /// Mark a task done. With --run the check runs first and is stored as evidence; a failing check keeps it open
     Done {
         task_id: String,
+        /// Check to run before closing, e.g. "cargo test" (through the system shell; output is shown)
+        #[arg(long, value_name = "CMD")]
+        run: Option<String>,
+        /// Short result to store with the evidence, e.g. "94 passed"
+        #[arg(long, requires = "run")]
+        summary: Option<String>,
+        /// Link or path to the full log
+        #[arg(long, requires = "run")]
+        log: Option<String>,
     },
     Undo {
         task_id: String,
@@ -200,6 +245,13 @@ pub enum TaskCmd {
         session_url: Option<String>,
         #[arg(long, requires = "session_client")]
         session_title: Option<String>,
+    },
+    /// Still working: refresh your claims (all, or one task) so they are not shown as silent or expire
+    Heartbeat {
+        task_id: Option<String>,
+        /// What you are doing now (replaces the claim note)
+        #[arg(long)]
+        note: Option<String>,
     },
     /// Release your claim on a task
     Release {
@@ -244,6 +296,18 @@ pub enum SkillCmd {
         #[arg(long)]
         force: bool,
     },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum GateCmd {
+    /// Run the gate's `check` command (system shell, output shown) and record the result
+    Run { key: String },
+}
+
+#[derive(clap::ValueEnum, Clone, Copy, Debug)]
+pub enum ImportFormat {
+    /// GitHub Spec Kit tasks.md
+    SpecKit,
 }
 
 #[derive(clap::ValueEnum, Clone, Copy, Debug)]

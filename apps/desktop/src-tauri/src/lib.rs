@@ -276,6 +276,64 @@ fn open_url(app: AppHandle, url: String) -> CmdResult<()> {
     app.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())
 }
 
+/// Open a project-relative artifact file with the system's default app (paths outside the project fail).
+#[tauri::command]
+fn artifact_open(app: AppHandle, state: State<'_, AppState>, path: String) -> CmdResult<()> {
+    let full = with_project(&state, |p| p.artifact_path(&path))?;
+    app.opener().open_path(full.display().to_string(), None::<&str>).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn usage_summary(state: State<'_, AppState>) -> CmdResult<pathloom_core::UsageSummary> {
+    with_project(&state, |p| p.usage_summary())
+}
+
+/// Run a gate's `check` in the project folder (after the user confirmed it in the UI) and record the result.
+#[tauri::command]
+async fn gate_run(state: State<'_, AppState>, key: String) -> CmdResult<Vec<StageView>> {
+    let p = with_project(&state, |p| Ok(p.clone()))?;
+    let check = p.load_stage(&key).map_err(|e| e.to_string())?.check.ok_or("this gate has no check command")?;
+    let (root, cmd) = (p.root.clone(), check.clone());
+    let (code, ms) = tauri::async_runtime::spawn_blocking(move || {
+        let mut c = if cfg!(windows) {
+            let mut c = std::process::Command::new("cmd");
+            c.args(["/C", &cmd]);
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                c.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+            }
+            c
+        } else {
+            let mut c = std::process::Command::new("sh");
+            c.args(["-c", &cmd]);
+            c
+        };
+        let start = std::time::Instant::now();
+        let out = c.current_dir(root).output();
+        (out.map(|o| o.status.code().unwrap_or(-1)), u64::try_from(start.elapsed().as_millis()).unwrap_or(u64::MAX))
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    let code = code.map_err(|e| format!("cannot run `{check}`: {e}"))?;
+    let ev = pathloom_core::Evidence {
+        command: check.clone(),
+        exit_code: code,
+        duration_ms: Some(ms),
+        summary: None,
+        log: None,
+        at: String::new(),
+        by: "me".into(),
+    };
+    let (_, passed) = p.set_gate_result(&key, ev).map_err(|e| e.to_string())?;
+    let summary = if passed { format!("gate {key} passed: {check}") } else { format!("gate {key} failed ({code}): {check}") };
+    log_app(&p, "set_gate", &summary, vec![key], vec![]);
+    if !passed {
+        return Err(format!("`{check}` exited with {code}: the gate stays open"));
+    }
+    views(&p).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn claims_list(state: State<'_, AppState>) -> CmdResult<Vec<Claim>> {
     with_project(&state, |p| p.claims())
@@ -403,6 +461,8 @@ struct AgentSetup {
     cli_path: Option<String>,
     /// "auto" or "review" for the open project.
     agent_changes: String,
+    /// Agents must attach passing evidence to close tasks.
+    require_evidence: bool,
 }
 
 #[tauri::command]
@@ -420,7 +480,9 @@ fn agent_setup(state: State<'_, AppState>) -> AgentSetup {
         .and_then(|g| g.as_ref().map(|p| p.config.agent_changes))
         .map_or("auto", |m| if m == AgentChanges::Review { "review" } else { "auto" })
         .to_string();
-    AgentSetup { cli_path, agent_changes }
+    let require_evidence =
+        state.project.lock().ok().and_then(|g| g.as_ref().map(|p| p.config.require_evidence)).unwrap_or(false);
+    AgentSetup { cli_path, agent_changes, require_evidence }
 }
 
 #[tauri::command]
@@ -430,6 +492,13 @@ fn set_agent_changes(state: State<'_, AppState>, review: bool) -> CmdResult<()> 
     project
         .set_agent_changes(if review { AgentChanges::Review } else { AgentChanges::Auto })
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn set_require_evidence(state: State<'_, AppState>, on: bool) -> CmdResult<()> {
+    let mut guard = state.project.lock().map_err(|_| "internal state poisoned".to_string())?;
+    let project = guard.as_mut().ok_or_else(|| "no project is open".to_string())?;
+    project.set_require_evidence(on).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -503,6 +572,10 @@ pub fn run() {
             themes_list,
             agent_setup,
             set_agent_changes,
+            set_require_evidence,
+            artifact_open,
+            usage_summary,
+            gate_run,
             proposals_list,
             proposal_accept,
             proposal_reject,

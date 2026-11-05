@@ -15,6 +15,8 @@ use serde::{Deserialize, Serialize};
 pub const DEFAULT_CLAIM_TTL_SECS: u64 = 30 * 60;
 /// Longest allowed claim lifetime: 8 hours.
 pub const MAX_CLAIM_TTL_SECS: u64 = 8 * 3600;
+/// A claim whose agent sent no heartbeat (or action) for this long is shown as "silent, maybe stuck".
+pub const SILENT_AFTER_SECS: i64 = 10 * 60;
 
 const CLAIMS_FILE: &str = ".pathloom/claims.json";
 const GITIGNORE: &str = ".pathloom/.gitignore";
@@ -32,6 +34,22 @@ pub struct Claim {
     /// External client session this claim was made from.
     #[serde(default)]
     pub session: Option<SessionRef>,
+    /// Last sign of life from the agent (claim, heartbeat or any logged action). Older files lack it: `at` counts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub heartbeat_at: Option<String>,
+}
+
+impl Claim {
+    /// Last sign of life: `heartbeat_at`, else `at`.
+    pub fn last_seen(&self) -> &str {
+        self.heartbeat_at.as_deref().unwrap_or(&self.at)
+    }
+
+    /// No sign of life for [`SILENT_AFTER_SECS`] at time `now` (unix seconds).
+    pub fn is_silent(&self, now: i64) -> bool {
+        // Both sides are RFC3339 UTC in the same format, so string order is time order.
+        self.last_seen() < format_secs(now - SILENT_AFTER_SECS).as_str()
+    }
 }
 
 /// Claim as shown on a stage card (camelCase JSON, like the rest of `StageView`).
@@ -43,15 +61,26 @@ pub struct ClaimView {
     pub expires_at: String,
     #[serde(default)]
     pub session: Option<SessionRef>,
+    /// Last sign of life (RFC3339). The app recomputes "silent" from it as time passes.
+    #[serde(default)]
+    pub heartbeat_at: String,
+    /// No sign of life for 10 minutes when the view was built.
+    #[serde(default)]
+    pub silent: bool,
+    #[serde(default)]
+    pub note: String,
 }
 
-impl From<&Claim> for ClaimView {
-    fn from(c: &Claim) -> Self {
+impl ClaimView {
+    fn of(c: &Claim, now: i64) -> Self {
         ClaimView {
             task_id: c.task_id.clone(),
             agent: c.agent.clone(),
             expires_at: c.expires_at.clone(),
             session: c.session.clone(),
+            heartbeat_at: c.last_seen().to_string(),
+            silent: c.is_silent(now),
+            note: c.note.clone(),
         }
     }
 }
@@ -208,10 +237,11 @@ impl Project {
         let claim = Claim {
             task_id: task_id.into(),
             agent: agent.into(),
-            at: now_s,
+            at: now_s.clone(),
             expires_at: format_secs(now.saturating_add(secs)),
             note: note.replace(['\r', '\n'], " ").trim().into(),
             session: session.clone(),
+            heartbeat_at: Some(now_s.clone()),
         };
         claims.retain(|c| c.task_id != task_id);
         claims.push(claim.clone());
@@ -256,6 +286,53 @@ impl Project {
         Ok(())
     }
 
+    /// The agent is alive: refresh `heartbeat_at` on its live claims (only `task_id` when given) and keep them
+    /// for at least another default TTL. A non-empty `note` replaces the claims' note. Returns the touched claims;
+    /// a `task_id` the agent does not hold fails with [`Error::NotFound`].
+    pub fn heartbeat(&self, agent: &str, task_id: Option<&str>, note: Option<&str>) -> Result<Vec<Claim>> {
+        self.heartbeat_inner(agent, task_id, note, true, now_secs())
+    }
+
+    /// Best effort after any logged action of `agent`: mark its claims alive (no TTL change, never fails).
+    pub fn touch_claims(&self, agent: &str) {
+        let _ = self.heartbeat_inner(agent, None, None, false, now_secs());
+    }
+
+    pub(crate) fn heartbeat_inner(
+        &self,
+        agent: &str,
+        task_id: Option<&str>,
+        note: Option<&str>,
+        extend: bool,
+        now: i64,
+    ) -> Result<Vec<Claim>> {
+        let agent = agent.trim();
+        let now_s = format_secs(now);
+        let keep_until = format_secs(now.saturating_add(i64::try_from(DEFAULT_CLAIM_TTL_SECS).unwrap_or(1800)));
+        let note = note.map(|n| n.replace(['\r', '\n'], " ").trim().to_string()).filter(|n| !n.is_empty());
+        let _lock = self.lock_claims()?;
+        let all = self.read_claims_raw();
+        let mut claims = Self::live(all.clone(), &now_s);
+        let mut touched = Vec::new();
+        for c in claims.iter_mut().filter(|c| c.agent == agent && task_id.is_none_or(|t| c.task_id == t)) {
+            c.heartbeat_at = Some(now_s.clone());
+            if extend && c.expires_at < keep_until {
+                c.expires_at.clone_from(&keep_until);
+            }
+            if let Some(n) = &note {
+                c.note.clone_from(n);
+            }
+            touched.push(c.clone());
+        }
+        if let (Some(t), true) = (task_id, touched.is_empty()) {
+            return Err(Error::NotFound(format!("claim of {agent} on task {t}")));
+        }
+        if !touched.is_empty() || claims.len() != all.len() {
+            self.write_claims(claims)?;
+        }
+        Ok(touched)
+    }
+
     /// Remove claims on tasks that are done in `stages` (called after a task is marked done).
     pub(crate) fn release_done_claims(&self, stages: &[Stage]) {
         let Ok(_lock) = self.lock_claims() else { return };
@@ -281,8 +358,9 @@ impl Project {
     pub fn stage_views_live(&self) -> Result<Vec<StageView>> {
         let mut views = stage_views(&self.load_stages()?);
         let claims = self.claims()?;
+        let now = now_secs();
         for v in &mut views {
-            v.claims = claims.iter().filter(|c| stage_key_of(&c.task_id) == v.stage.key).map(ClaimView::from).collect();
+            v.claims = claims.iter().filter(|c| stage_key_of(&c.task_id) == v.stage.key).map(|c| ClaimView::of(c, now)).collect();
         }
         Ok(views)
     }
@@ -351,6 +429,31 @@ mod tests {
         assert!(matches!(p.claim_task_at("A-01", " ", 60, "", T0), Err(Error::InvalidSpec(_))));
         p.set_task_done("A-01", true).unwrap();
         assert!(matches!(p.claim_task_at("A-01", "claude", 60, "", T0), Err(Error::InvalidSpec(_))));
+    }
+
+    #[test]
+    fn heartbeat_touch_and_silence() {
+        let (_d, p) = setup();
+        let c = p.claim_task_at("A-01", "claude", 120, "", T0).unwrap();
+        assert_eq!(c.last_seen(), format_secs(T0));
+        assert!(!c.is_silent(T0 + SILENT_AFTER_SECS) && c.is_silent(T0 + SILENT_AFTER_SECS + 1));
+        // heartbeat refreshes, extends a short claim to the default TTL and sets the note
+        let hb = p.heartbeat_inner("claude", None, Some("running tests"), true, T0 + 100).unwrap();
+        assert_eq!(hb.len(), 1);
+        assert_eq!(hb[0].heartbeat_at.as_deref(), Some(format_secs(T0 + 100).as_str()));
+        assert_eq!(hb[0].expires_at, format_secs(T0 + 100 + 1800));
+        assert_eq!(hb[0].note, "running tests");
+        // touch (any action) refreshes without extending
+        let t = p.heartbeat_inner("claude", None, None, false, T0 + 200).unwrap();
+        assert_eq!((t[0].expires_at.as_str(), t[0].note.as_str()), (format_secs(T0 + 100 + 1800).as_str(), "running tests"));
+        // other agents and unknown tasks
+        assert!(p.heartbeat_inner("codex", None, None, true, T0).unwrap().is_empty());
+        assert!(matches!(p.heartbeat_inner("claude", Some("A-02"), None, true, T0 + 300), Err(Error::NotFound(_))));
+        // old claims.json without heartbeat_at: `at` counts
+        let mut old = p.read_claims_raw();
+        old[0].heartbeat_at = None;
+        p.write_claims(old).unwrap();
+        assert_eq!(p.read_claims_raw()[0].last_seen(), format_secs(T0));
     }
 
     #[test]

@@ -114,8 +114,55 @@ struct SetTaskParams {
     task_id: String,
     /// true = done, false = not done
     done: bool,
+    /// Proof for done=true: the check you ran (command, exit_code 0, duration_ms?, summary?, log?).
+    /// The task shows as verified. Required when the project has require_evidence on.
+    evidence: Option<pathloom_core::Evidence>,
     /// External client session you act from (client, id, url?, title?). Logged with the action.
     session: Option<SessionRef>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct HeartbeatParams {
+    /// Only this claimed task (default: all your claims)
+    task_id: Option<String>,
+    /// What you are doing now, e.g. "running tests" (replaces the claim note)
+    note: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct GateParams {
+    /// Gate stage key (kind: gate)
+    key: String,
+    /// Result of running the gate's `check` command: command, exit_code, duration_ms?, summary?, log?
+    evidence: pathloom_core::Evidence,
+    session: Option<SessionRef>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct UsageParams {
+    tokens_in: u64,
+    tokens_out: u64,
+    /// US dollars, if known
+    cost_usd: Option<f64>,
+    /// Stage the work was for
+    stage: Option<String>,
+    /// Short note, e.g. "planning session"
+    note: Option<String>,
+    session: Option<SessionRef>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ImportParams {
+    /// Format of `text`: spec-kit (GitHub Spec Kit tasks.md)
+    format: String,
+    /// File contents
+    text: String,
+    /// Stage key prefix, 1-5 letters (default: initials of the feature name)
+    prefix: Option<String>,
+    /// Board for new cards (default roadmap)
+    board: Option<String>,
+    /// Report only; write nothing
+    dry_run: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -290,16 +337,68 @@ impl PathloomServer {
             }
             let spec = ops::parse_spec_value(&a.spec)?;
             let p = self.project()?;
+            let done: Vec<String> = spec.stages.iter().flat_map(|s| s.tasks_done.iter().cloned()).collect();
+            ops::require_no_evidence_policy(&p, &done)?;
             let v = ops::submit(&p, &spec, &self.author(&ctx), dry, false)?;
             Ok(ops::log_submit(&p, &self.actor(&ctx, a.session)?, "apply", &spec, v))
         })())
     }
 
-    #[tool(description = "Mark a task or subtask done (true) or not done (false). Returns the stage's new status.")]
+    #[tool(
+        description = "Mark a task or subtask done (true) or not done (false). Attach `evidence` (the check you ran, exit_code 0) so the task shows as verified. Returns the stage's new status."
+    )]
     async fn set_task(&self, Parameters(a): Parameters<SetTaskParams>, ctx: RequestContext<RoleServer>) -> CallToolResult {
         finish((|| {
             self.guard()?;
-            ops::set_task(&self.project()?, &self.actor(&ctx, a.session)?, "set_task", &a.task_id, a.done)
+            ops::set_task(&self.project()?, &self.actor(&ctx, a.session)?, "set_task", &a.task_id, a.done, a.evidence, true)
+        })())
+    }
+
+    #[tool(
+        description = "Still working: refresh your claims so the app does not show you as silent (after 10 min without any action) and they do not expire. Call every few minutes during long steps.",
+        annotations(idempotent_hint = true)
+    )]
+    async fn heartbeat(&self, Parameters(a): Parameters<HeartbeatParams>, ctx: RequestContext<RoleServer>) -> CallToolResult {
+        finish((|| {
+            self.guard()?;
+            ops::heartbeat(&self.project()?, &self.actor(&ctx, None)?, a.task_id.as_deref(), a.note.as_deref())
+        })())
+    }
+
+    #[tool(
+        description = "Import another tool's task list as stages with tasks and dependencies. format=spec-kit takes a GitHub Spec Kit tasks.md (phases become stages). Re-import updates the same stages. Use dry_run first."
+    )]
+    async fn import_tasks(&self, Parameters(a): Parameters<ImportParams>, ctx: RequestContext<RoleServer>) -> CallToolResult {
+        finish((|| {
+            let dry = a.dry_run.unwrap_or(false);
+            if !dry {
+                self.guard()?;
+            }
+            if a.format != "spec-kit" {
+                return Err(ApiError::new("INVALID_SPEC", format!("unknown format `{}` (supported: spec-kit)", a.format)));
+            }
+            ops::import(&self.project()?, &self.actor(&ctx, None)?, &a.text, a.prefix.as_deref(), a.board.as_deref(), dry, false)
+        })())
+    }
+
+    #[tool(
+        description = "Record the result of a gate stage's check (kind: gate, its `check` command, e.g. npm test). Run the command yourself first. exit_code 0 makes the gate done; non-zero reopens it."
+    )]
+    async fn set_gate(&self, Parameters(a): Parameters<GateParams>, ctx: RequestContext<RoleServer>) -> CallToolResult {
+        finish((|| {
+            self.guard()?;
+            ops::set_gate(&self.project()?, &self.actor(&ctx, a.session)?, &a.key, a.evidence)
+        })())
+    }
+
+    #[tool(
+        description = "Optional: report tokens/cost of your work (for a stage) so the user sees spending per stage and agent. Pathloom only stores what you report."
+    )]
+    async fn report_usage(&self, Parameters(a): Parameters<UsageParams>, ctx: RequestContext<RoleServer>) -> CallToolResult {
+        finish((|| {
+            self.guard()?;
+            let u = pathloom_core::Usage { tokens_in: a.tokens_in, tokens_out: a.tokens_out, cost_usd: a.cost_usd };
+            ops::report_usage(&self.project()?, &self.actor(&ctx, a.session)?, u, a.stage.as_deref(), a.note.as_deref().unwrap_or(""))
         })())
     }
 

@@ -107,6 +107,14 @@ pub struct StageSpec {
     #[serde(deserialize_with = "lenient_vec", skip_serializing_if = "Vec::is_empty")]
     #[schemars(with = "Vec<String>")]
     pub tasks_undone: Vec<String>,
+    /// Hand-off files to list on the stage: project-relative paths or http(s) links (dedup; at most 30).
+    #[serde(deserialize_with = "lenient_vec", skip_serializing_if = "Vec::is_empty")]
+    #[schemars(with = "Vec<String>")]
+    pub artifacts_add: Vec<String>,
+    /// `kind: gate` only: command that must pass, e.g. `npm test`. Empty string clears.
+    #[serde(deserialize_with = "lenient_opt", skip_serializing_if = "Option::is_none")]
+    #[schemars(with = "Option<String>")]
+    pub check: Option<String>,
     /// External client sessions to record on the stage (dedup by client+id; at most 20 are kept).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub sessions_add: Vec<crate::session::SessionRef>,
@@ -363,6 +371,18 @@ impl Project {
             }
             for id in &ss.tasks_undone {
                 mark_done(st, id, false)?;
+            }
+            for a in &ss.artifacts_add {
+                let a = crate::project::check_artifact(a)?;
+                if !st.artifacts.contains(&a) {
+                    if st.artifacts.len() >= 30 {
+                        return Err(bad(format!("{key} has 30 artifacts already")));
+                    }
+                    st.artifacts.push(a);
+                }
+            }
+            if let Some(c) = &ss.check {
+                st.check = opt_clear(&c.replace(['\r', '\n'], " "));
             }
             for s in &ss.sessions_add {
                 crate::session::push_session(&mut st.sessions, s.clone().normalize()?);

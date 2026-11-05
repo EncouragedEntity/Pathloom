@@ -8,7 +8,7 @@ export interface LogEntry {
   stages: string[]; tasks: string[]; files: string[];
 }
 export interface SessionRef { client: string; id: string; url?: string | null; title?: string | null }
-export interface ClaimView { taskId: string; agent: string; expiresAt: string }
+export interface ClaimView { taskId: string; agent: string; expiresAt: string; heartbeatAt?: string; silent?: boolean; note?: string }
 
 const GENERIC = new Set(['me', 'ai', 'both']);
 

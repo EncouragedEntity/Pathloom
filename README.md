@@ -94,7 +94,12 @@ Other MCP clients (Cursor, etc.) use the same server: `{"command": "pathloom", "
 | `set_task`, `add_comment` | Track progress and leave notes for you. |
 | `claim_task`, `release_task` | Take a task so other agents don't work on the same thing (expires after 30 min unless renewed). |
 | `activity` | What other agents and you did recently. |
+| `heartbeat` | "Still working" during long steps; after 10 silent minutes the card shows the agent as possibly stuck. |
+| `set_gate`, `report_usage` | Report a gate's check result; optionally report tokens and cost. |
+| `import_tasks` | Turn a GitHub Spec Kit `tasks.md` into stages, tasks and dependencies. |
 | `layout_board`, `validate` | Tidy the board, check the plan for problems. |
+
+**Done means proven.** An agent closes a task with the check it ran (`set_task` with `evidence`, or `pathloom task done AUTH-02 --run "cargo test"`): the task shows as verified, and a failing check never closes it. Turn on *Agents must prove a task is done* in Settings to require it. **Gate** stages (`kind: gate`, `check: npm test`) are done only when their check passes. Stages can list hand-off files (spec, plan) as **artifacts**, and Overview shows the **spending** agents report.
 
 **Several agents at once.** Stages can be assigned to a named agent (`who: ai:claude`, `ai:codex`) or person (`human:olia`) — each gets its own colour. An agent claims a task before working on it; the card shows who is on it, and other agents skip it. **Overview** shows who is working right now and a feed of agent activity (`.pathloom/log/agent.jsonl`).
 

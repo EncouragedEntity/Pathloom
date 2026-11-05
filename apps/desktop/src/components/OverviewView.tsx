@@ -1,10 +1,33 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { api, type UsageSummary } from '../api';
 import { useTranslation } from 'react-i18next';
 import { IconLock, IconCalendar, IconSparkles, IconUser, IconDiamond } from '@tabler/icons-react';
 import type { CardElement, FrameElement, StageView, Task } from '@pathloom/canvas';
 import { useApp } from '../store';
 import { focusStage } from './Sidebar';
 import { ago, agentText, claimOf, whoText } from '../agents';
+
+const fmtTokens = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n));
+const fmtUsage = (u: { tokens_in: number; tokens_out: number; cost_usd?: number }) =>
+  `${fmtTokens(u.tokens_in + u.tokens_out)}${u.cost_usd != null ? ` · $${u.cost_usd.toFixed(2)}` : ''}`;
+
+/** Tokens / cost that agents reported (shown only when some exist). Refreshes with the activity log. */
+function UsageBox() {
+  const { t } = useTranslation();
+  const { activity, agents, project } = useApp();
+  const [u, setU] = useState<UsageSummary | null>(null);
+  useEffect(() => { if (project) api.usageSummary().then(setU).catch(() => setU(null)); }, [activity, project]);
+  if (!u || Object.keys(u.by_agent).length === 0) return null;
+  const top = (m: Record<string, { tokens_in: number; tokens_out: number; cost_usd?: number }>) =>
+    Object.entries(m).sort((a, b) => (b[1].cost_usd ?? 0) - (a[1].cost_usd ?? 0) || b[1].tokens_in + b[1].tokens_out - a[1].tokens_in - a[1].tokens_out).slice(0, 5);
+  return (
+    <section className="box">
+      <h3>{t('usage.title')} <span className="muted">{fmtUsage(u.total)}</span></h3>
+      {top(u.by_agent).map(([k, v]) => <div key={k} className="ov-row"><span className="grow">{agentText(k, agents)}</span><span className="muted">{fmtUsage(v)}</span></div>)}
+      {top(u.by_stage).map(([k, v]) => <div key={k} className="ov-row"><span className="grow mono">{k}</span><span className="muted">{fmtUsage(v)}</span></div>)}
+    </section>
+  );
+}
 
 const isDone = (t: Task) => (t.sub.length ? t.sub.every((s) => s.done) : t.done);
 const PRIO = { high: 0, med: 1, low: 2 } as const;
@@ -102,6 +125,7 @@ export function OverviewView() {
           {stages.flatMap((s) => (s.claims ?? []).map((c) => ({ s, c }))).map(({ s, c }) => (
             <button key={c.taskId} className="ov-row" onClick={() => go(s.key)}>
               <IconSparkles size={14} className="ac" /><span className="grow">{c.taskId} · {s.tasks.find((x) => x.id === c.taskId)?.title ?? s.title}</span>
+              {c.silent && <span className="warn-txt" title={t('agentsUi.silentHint', { agent: agentText(c.agent, agents), ago: ago(c.heartbeatAt ?? '', t) })}>{t('agentsUi.silent')}</span>}
               <span className="muted">{agentText(c.agent, agents)}</span>
             </button>
           ))}
@@ -117,6 +141,7 @@ export function OverviewView() {
             </button>
           ))}
         </section>
+        <UsageBox />
         <section className="box">
           <h3>{t('overview.notes')}</h3>
           {data.notes.length === 0 && <p className="muted">{t('overview.noNotes')}</p>}

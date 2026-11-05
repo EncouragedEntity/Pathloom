@@ -6,7 +6,7 @@
 
 ## Документи (читати перед роботою)
 - `docs/spec.md` — затверджена специфікація v0.1 (джерело правди).
-- `docs/m1-contracts.md` … `docs/m3-contracts.md`, `docs/m6-agents-contracts.md`, `docs/m7-clients-contracts.md` — API між модулями.
+- `docs/m1-contracts.md` … `docs/m3-contracts.md`, `docs/m6-agents-contracts.md`, `docs/m7-clients-contracts.md`, `docs/m8-proof-contracts.md` — API між модулями.
 - `docs/ideas.md` — що робити далі.
 - `docs/discovery.md` — журнал рішень і причини.
 - Інший проєкт власника (Maestro) — окремий продукт; Pathloom інтегрується з будь-якими клієнтами лише через публічний протокол (MCP/CLI/файли/`watch`).

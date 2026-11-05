@@ -6,6 +6,8 @@ mod apply;
 mod board;
 mod claims;
 mod error;
+mod evidence;
+mod import;
 pub mod events;
 mod fsutil;
 mod hash;
@@ -30,8 +32,8 @@ pub use apply::{
     UnlinkSpec,
 };
 pub use board::BOARD_FORMAT;
-pub use claims::{Claim, ClaimView, DEFAULT_CLAIM_TTL_SECS, MAX_CLAIM_TTL_SECS};
-pub use log::LogEntry;
+pub use claims::{Claim, ClaimView, DEFAULT_CLAIM_TTL_SECS, MAX_CLAIM_TTL_SECS, SILENT_AFTER_SECS};
+pub use log::{LogEntry, Usage, UsageSummary};
 pub use fsutil::{now_rfc3339, write_file_atomic};
 pub use hash::hash_bytes;
 pub use next::NextTask;
@@ -40,6 +42,8 @@ pub use protocol::{PROTOCOL, capabilities};
 pub use session::{MAX_STAGE_SESSIONS, SessionRef};
 pub use validate::Issue;
 pub use error::{Error, Result};
+pub use evidence::Evidence;
+pub use import::ImportReport;
 pub use keygen::generate_key;
 pub use model::{
     AgentChanges, Board, Comment, Dep, Priority, ProjectConfig, Stage, StageKind, StageMeta, StageView, Status,

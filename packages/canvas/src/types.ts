@@ -102,7 +102,11 @@ export interface Dep { id: string; soft: boolean }
 export interface StageView {
   key: string;
   title: string;
-  kind: 'stage' | 'milestone';
+  kind: 'stage' | 'milestone' | 'gate';
+  /** Hand-off files: project-relative paths or http(s) links. */
+  artifacts?: string[];
+  /** `kind: gate`: command that must pass. */
+  check?: string | null;
   /** `me`, `ai`, `both`, `ai:<name>` or `human:<name>`. */
   who: string;
   due: string | null;
@@ -117,9 +121,22 @@ export interface StageView {
   status: StageStatus;
   progress: [number, number];
   /** Live task claims (agent working on a task); a claim on a task covers its subtasks. */
-  claims?: { taskId: string; agent: string; expiresAt: string }[];
+  claims?: { taskId: string; agent: string; expiresAt: string; heartbeatAt?: string; silent?: boolean; note?: string }[];
+  /** Proof per done task id: the check that was run (exit code 0). */
+  evidence?: Record<string, Evidence>;
   /** External sessions (other apps) that worked on this stage, oldest first. */
   sessions?: { client: string; id: string; url?: string | null; title?: string | null }[];
+}
+
+/** Check attached to a done task (`set_task` evidence). */
+export interface Evidence {
+  command: string;
+  exit_code: number;
+  duration_ms?: number;
+  summary?: string;
+  log?: string;
+  at: string;
+  by: string;
 }
 
 export interface ThemeTokens {

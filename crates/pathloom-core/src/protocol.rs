@@ -8,7 +8,10 @@ pub fn capabilities(read_only: bool) -> Vec<&'static str> {
     if read_only {
         vec!["read", "activity", "events", "validate"]
     } else {
-        vec!["read", "apply", "proposals", "claims", "activity", "agents", "events", "sessions", "layout", "validate"]
+        vec![
+            "read", "apply", "proposals", "claims", "activity", "agents", "events", "sessions", "layout", "validate",
+            "evidence", "heartbeat", "import", "artifacts", "usage", "gates",
+        ]
     }
 }
 
@@ -21,7 +24,7 @@ mod tests {
         let rw = capabilities(false);
         let ro = capabilities(true);
         assert!(ro.iter().all(|c| rw.contains(c)));
-        for mutating in ["apply", "proposals", "claims", "agents", "sessions", "layout"] {
+        for mutating in ["apply", "proposals", "claims", "agents", "sessions", "layout", "evidence", "heartbeat", "import", "usage", "gates"] {
             assert!(rw.contains(&mutating) && !ro.contains(&mutating), "{mutating}");
         }
         assert_eq!(PROTOCOL, "pathloom/1");

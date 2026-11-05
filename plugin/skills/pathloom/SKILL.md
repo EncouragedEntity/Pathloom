@@ -51,11 +51,19 @@ frames:
 3. While working:
    - `next` lists tasks you can do right now (unblocked, by priority and due date). Tasks taken by other agents are hidden; your own come first.
    - **Claim before you start**: `claim_task {task_id}` (30 min by default, re-claim to extend). The card shows your name, and other agents won't take the task. A `CLAIMED` error means someone else is on it — pick another task; never force unless the user asks.
-   - Mark progress with `set_task {task_id, done: true}` — this also releases your claim. If you stop without finishing, call `release_task`.
+   - Mark progress with `set_task {task_id, done: true, evidence: {command, exit_code: 0, duration_ms?, summary?}}` — run the real check (tests, build) first and attach its result: the task shows as **verified**. This also releases your claim. If you stop without finishing, call `release_task`. A failing check (exit code ≠ 0) never closes a task. Projects with `require_evidence: true` (see `project_info`) refuse `done` without evidence (`EVIDENCE_REQUIRED`).
+   - During long steps call `heartbeat {note?}` every few minutes (any other action counts too). After 10 minutes without a sign of life the app marks you as "silent, maybe stuck".
+   - List hand-off files of a stage (spec, plan, review notes) with `apply` → `stages: [{id, artifacts_add: [specs/auth/spec.md]}]`. A hand-off is an artifact, not a retelling: write the file, then link it.
+   - Gate stages (`kind: gate`, with `check: npm test`) are done only when the check passes: run the command, then `set_gate {key, evidence}`.
+   - Optional: `report_usage {tokens_in, tokens_out, cost_usd?, stage?}` so the user sees spending per stage and agent.
    - Leave short notes with `add_comment` — the user reads them on the card.
    - `activity` shows what other agents and the user did recently. Read it when you start a session.
 4. Keep `branch` on a stage in sync with the git branch you work on (`apply` with `branch: feat/x`).
 5. Run `validate` after larger edits.
+
+## Importing a plan
+
+A GitHub Spec Kit `tasks.md` (phases with `- [ ] T001 ...`) becomes stages with tasks and dependencies: `import_tasks {format: "spec-kit", text, dry_run: true}` (or `pathloom import spec-kit specs/<feature>/tasks.md`). Re-import after editing `tasks.md` adds new tasks and marks checked ones done.
 
 ## Sessions
 
@@ -77,10 +85,13 @@ If the project uses `agent_changes = "review"`, `apply` creates a **proposal** i
 
 ```
 pathloom next --json
-pathloom task done AUTH-02
+pathloom task done AUTH-02 --run "cargo test"   # runs the check, closes only if it passes
+pathloom task heartbeat --note "running tests"
+pathloom gate run TESTS
+pathloom import spec-kit specs/001-auth/tasks.md --dry-run
 pathloom comment AUTH "Login works, tests pass"
 pathloom apply plan.yaml --dry-run
 pathloom validate
 ```
 
-Errors are structured: `NOT_FOUND`, `CYCLE`, `DUPLICATE_KEY`, `CONFLICT`, `INVALID_SPEC`, `READ_ONLY`, `OUT_OF_PROJECT`.
+Errors are structured: `NOT_FOUND`, `CYCLE`, `DUPLICATE_KEY`, `CONFLICT`, `INVALID_SPEC`, `READ_ONLY`, `OUT_OF_PROJECT`, `EVIDENCE_REQUIRED`, `CHECK_FAILED`.

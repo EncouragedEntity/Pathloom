@@ -106,9 +106,13 @@ export async function startAgentSync(): Promise<() => void> {
       .catch((err) => useApp.getState().set({ error: errorText(err) }));
   });
   const un2 = await listen('agents-changed', () => { void refreshAgents(); });
+  // "Silent agent" depends on the clock, not on files: while someone holds a claim, recheck every minute.
+  const tick = window.setInterval(() => {
+    if (useApp.getState().stages.some((s) => (s.claims ?? []).length)) void refreshAgents();
+  }, 60_000);
   await refreshProposals();
   await refreshAgents();
-  return () => { un(); un2(); };
+  return () => { un(); un2(); window.clearInterval(tick); };
 }
 
 /** Replaces the canvas board with the file on disk, discarding any derived pending save. */

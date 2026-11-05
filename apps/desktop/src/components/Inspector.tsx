@@ -3,20 +3,51 @@ import { useTranslation } from 'react-i18next';
 import { ask } from '@tauri-apps/plugin-dialog';
 import {
   IconX, IconCheck, IconPlus, IconCalendar, IconFlag, IconUser, IconGitBranch, IconTrash,
-  IconFileText, IconListDetails, IconDiamond, IconCornerDownRight, IconCopy, IconExternalLink,
+  IconFileText, IconListDetails, IconDiamond, IconCornerDownRight, IconCopy, IconExternalLink, IconShieldCheck, IconAlertTriangle,
 } from '@tabler/icons-react';
 import type { StageView, Task } from '@pathloom/canvas';
 import { api, errorText, type StageMeta } from '../api';
 import i18n from '../i18n';
 import { editorRef, useApp } from '../store';
 import { StatusIcon, focusStage } from './Sidebar';
-import { agentText, claimOf, knownWhos, whoColor, whoText } from '../agents';
+import { agentText, ago, claimOf, knownWhos, whoColor, whoText } from '../agents';
+import type { Evidence } from '@pathloom/canvas';
 import { findTheme } from '../theme';
 
 /** External session links open only after the user confirms (the URL may start another app). */
 async function openSession(url: string): Promise<void> {
   const ok = await ask(i18n.t('sessions.confirm', { url }), { title: i18n.t('sessions.open'), kind: 'info' });
   if (ok) await api.openUrl(url).catch((e) => useApp.getState().set({ error: errorText(e) }));
+}
+
+/** Tooltip: "cargo test → 0 · 94 passed · 12 s · claude, 5 min ago". */
+function evidenceText(e: Evidence, t: (k: string, o?: Record<string, unknown>) => string, name: (id: string) => string = (x) => x): string {
+  const parts = [`${e.command} → ${e.exit_code}`];
+  if (e.summary) parts.push(e.summary);
+  if (e.duration_ms != null) parts.push(e.duration_ms < 1000 ? `${e.duration_ms} ms` : `${Math.round(e.duration_ms / 100) / 10} s`);
+  if (e.by || e.at) parts.push([e.by ? name(e.by) : '', e.at ? ago(e.at, t as never) : ''].filter(Boolean).join(', '));
+  return `${t('evidence.verified')}: ${parts.join(' · ')}${e.log ? `\n${e.log}` : ''}`;
+}
+
+/** Gate result and "Run check" (the app runs the stage's `check` command in the project folder). */
+function GateBox({ stage }: { stage: StageView }) {
+  const { t } = useTranslation();
+  const { setStages, set, agents } = useApp();
+  const [running, setRunning] = useState(false);
+  const ev = stage.evidence?.[stage.key];
+  const run = async () => {
+    if (!stage.check) return;
+    const ok = await ask(t('gate.confirm', { cmd: stage.check }), { title: t('gate.run'), kind: 'warning' });
+    if (!ok) return;
+    setRunning(true);
+    try { setStages(await api.gateRun(stage.key)); } catch (e) { set({ error: errorText(e) }); } finally { setRunning(false); }
+  };
+  return (
+    <div className={`gate ${ev ? 'ok' : ''}`}>
+      <span className="grow">{ev ? evidenceText(ev, t, (x) => agentText(x, agents)) : stage.check ? t('gate.notRun') : t('gate.noCheck')}</span>
+      {stage.check && <button className="btn" disabled={running} onClick={() => void run()}>{running ? t('gate.running') : t('gate.run')}</button>}
+    </div>
+  );
 }
 
 const isDone = (t: Task) => (t.sub.length ? t.sub.every((s) => s.done) : t.done);
@@ -50,16 +81,22 @@ function TaskRow({ task, sub, stage }: { task: Task; sub?: boolean; stage: Stage
   const claimColor = claim ? whoColor(`ai:${claim.agent}`, findTheme(theme, customThemes).tokens, agents) : null;
   const [adding, setAdding] = useState(false);
   const done = isDone(task);
+  const ev = stage.evidence?.[task.id];
   return (
     <>
       <li className={`trow ${done ? 'done' : ''} ${sub ? 'sub' : ''}`}>
         <button className="chk" aria-label={task.id} aria-pressed={done} onClick={() => call(api.taskToggle(task.id))}><IconCheck size={11} /></button>
         <span className="tid">{task.id}</span>
         <InlineText className="tt" value={task.title} onCommit={(v) => call(api.taskRename(task.id, v))} />
+        {done && ev && (
+          <span className="verified" title={evidenceText(ev, t, (x) => agentText(x, agents))} aria-label={t('evidence.verified')}><IconShieldCheck size={13} /></span>
+        )}
         {claim && (
-          <button className="claim-chip" style={claimColor ? { color: claimColor, borderColor: claimColor } : undefined}
-            title={t('agentsUi.release', { agent: agentText(claim.agent, agents) })} onClick={() => call(api.claimRelease(claim.taskId))}>
-            {agentText(claim.agent, agents)} <IconX size={10} />
+          <button className={`claim-chip ${claim.silent ? 'silent' : ''}`} style={claimColor && !claim.silent ? { color: claimColor, borderColor: claimColor } : undefined}
+            title={(claim.silent ? t('agentsUi.silentHint', { agent: agentText(claim.agent, agents), ago: ago(claim.heartbeatAt ?? '', t) }) + '\n' : '')
+              + (claim.note ? claim.note + '\n' : '') + t('agentsUi.release', { agent: agentText(claim.agent, agents) })}
+            onClick={() => call(api.claimRelease(claim.taskId))}>
+            {claim.silent && <IconAlertTriangle size={10} />}{agentText(claim.agent, agents)} <IconX size={10} />
           </button>
         )}
         <span className="row-actions">
@@ -155,8 +192,24 @@ export function Inspector({ stageKey }: { stageKey: string }) {
                 <select value={stage.kind} onChange={(e) => update({ kind: e.target.value as StageView['kind'] })}>
                   <option value="stage">{t('inspector.kinds.stage')}</option>
                   <option value="milestone">{t('inspector.kinds.milestone')}</option>
+                  <option value="gate">{t('inspector.kinds.gate')}</option>
                 </select>
               </dd>
+              {stage.kind === 'gate' && (
+                <>
+                  <dt><IconShieldCheck size={14} />{t('gate.check')}</dt>
+                  <dd>
+                    <input
+                      key={stage.check ?? ''}
+                      className="inline-edit mono"
+                      defaultValue={stage.check ?? ''}
+                      placeholder="npm test"
+                      onBlur={(e) => { const v = e.currentTarget.value.trim(); if (v !== (stage.check ?? '')) update({ check: v }); }}
+                      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+                    />
+                  </dd>
+                </>
+              )}
               <dt><IconUser size={14} />{t('inspector.who')}</dt>
               <dd>
                 {otherWho ? (
@@ -199,6 +252,24 @@ export function Inspector({ stageKey }: { stageKey: string }) {
               <dd>{blocks.length ? blocks.map((b) => <button key={b.key} className="dep" onClick={() => focusStage(b.key)}>{b.key}</button>) : '—'}</dd>
             </dl>
             {stage.description.trim() && <p className="i-desc">{stage.description.trim()}</p>}
+            {stage.kind === 'gate' && <GateBox stage={stage} />}
+            {(stage.artifacts ?? []).length > 0 && (
+              <>
+                <div className="i-h"><span>{t('artifacts.title')}</span></div>
+                <ul className="sessions">
+                  {(stage.artifacts ?? []).map((a) => (
+                    <li key={a}>
+                      <IconFileText size={13} className="muted" />
+                      <span className="grow mono" title={a}>{a}</span>
+                      <button className="icon-btn" title={t('artifacts.open')} aria-label={t('artifacts.open')}
+                        onClick={() => void (/^https?:\/\//i.test(a) ? openSession(a) : api.artifactOpen(a).catch((e) => set({ error: errorText(e) })))}>
+                        <IconExternalLink size={13} />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
             {(stage.sessions ?? []).length > 0 && (
               <>
                 <div className="i-h"><span>{t('sessions.title')}</span></div>

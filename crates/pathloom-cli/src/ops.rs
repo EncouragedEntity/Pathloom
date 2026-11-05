@@ -1,7 +1,7 @@
 //! Operations shared by the CLI and the MCP server. Everything returns JSON values and `ApiError`.
 
 use pathloom_core::{
-    AgentProfile, ApplyOptions, ApplySpec, Error, LogEntry, Project, SessionRef, Stage, StageView, Status, Who,
+    AgentProfile, ApplyOptions, ApplySpec, Error, Evidence, LogEntry, Project, SessionRef, Stage, StageView, Status, Who,
     capabilities, compute_statuses, stage_views,
 };
 use serde::Serialize;
@@ -169,7 +169,8 @@ pub fn project_info(p: &Project, read_only: bool) -> ApiResult<Value> {
         "name": p.config.name, "root": p.root.to_string_lossy(), "plan_dir": p.config.plan_dir,
         "protocol": pathloom_core::PROTOCOL, "version": env!("CARGO_PKG_VERSION"),
         "capabilities": capabilities(read_only),
-        "agent_changes": to_v(&p.config.agent_changes), "read_only": read_only,
+        "agent_changes": to_v(&p.config.agent_changes), "require_evidence": p.config.require_evidence,
+        "read_only": read_only,
         "agents": p.agents()?,
         "boards": p.list_boards()?,
         "stages": {"total": stages.len(), "done": count(Status::Done), "active": count(Status::Active),
@@ -230,12 +231,56 @@ pub fn parse_spec_value(v: &Value) -> ApiResult<ApplySpec> {
     }
 }
 
-pub fn set_task(p: &Project, a: &Actor, action: &str, task_id: &str, done: bool) -> ApiResult<Value> {
-    let s = p.set_task_done(task_id, done)?;
-    let v = json!({"task_id": task_id, "done": done, "stage": brief(&s, p)?});
-    let summary = format!("{task_id} {}", if done { "done" } else { "reopened" });
+/// Mark a task done/undone, optionally with evidence (its `by` defaults to the actor).
+/// `enforce`: apply the project's `require_evidence` policy (agents via MCP).
+pub fn set_task(
+    p: &Project,
+    a: &Actor,
+    action: &str,
+    task_id: &str,
+    done: bool,
+    evidence: Option<Evidence>,
+    enforce: bool,
+) -> ApiResult<Value> {
+    if enforce && done && evidence.is_none() {
+        require_no_evidence_policy(p, &[task_id.to_string()])?;
+    }
+    let evidence = evidence.map(|mut e| {
+        if e.by.trim().is_empty() {
+            e.by.clone_from(&a.name);
+        }
+        e
+    });
+    let verified = evidence.as_ref().map(|e| e.command.clone());
+    let s = p.set_task_done_with(task_id, done, evidence)?;
+    let v = json!({"task_id": task_id, "done": done, "verified": verified.is_some(), "stage": brief(&s, p)?});
+    let summary = match (done, verified) {
+        (true, Some(cmd)) => format!("{task_id} done, verified: {}", cmd.chars().take(60).collect::<String>()),
+        (true, None) => format!("{task_id} done"),
+        (false, _) => format!("{task_id} reopened"),
+    };
     let e = entry(action, summary, vec![s.key.clone()], vec![task_id.into()], vec![stage_file(p, &s.key)]);
     Ok(log(p, a, e, v))
+}
+
+/// With `require_evidence` on, refuse closing these tasks (of `kind: stage` stages) without evidence.
+pub fn require_no_evidence_policy(p: &Project, task_ids: &[String]) -> ApiResult<()> {
+    if !p.config.require_evidence {
+        return Ok(());
+    }
+    for id in task_ids {
+        let st = p.load_stage(&stage_key(id))?;
+        if st.kind == pathloom_core::StageKind::Stage {
+            return Err(ApiError {
+                code: "EVIDENCE_REQUIRED",
+                message: format!(
+                    "this project requires evidence to close tasks: run the check, then set_task {{task_id: {id}, done: true, evidence: {{command, exit_code: 0}}}}"
+                ),
+                details: json!({"task_id": id}),
+            });
+        }
+    }
+    Ok(())
 }
 
 pub fn add_comment(p: &Project, a: &Actor, key: &str, author: &str, text: &str) -> ApiResult<Value> {
@@ -322,6 +367,8 @@ fn stage_file(p: &Project, key: &str) -> String {
 /// Write a log entry for a successful mutation. A failing log never fails the action:
 /// the problem is returned as `log_warning` inside `v`.
 pub fn log(p: &Project, a: &Actor, mut e: LogEntry, mut v: Value) -> Value {
+    // Any action is a sign of life for the actor's claims.
+    p.touch_claims(&a.name);
     e.author.clone_from(&a.name);
     e.source = a.source.into();
     if e.session.is_none() {
@@ -392,8 +439,86 @@ pub fn release_task(p: &Project, a: &Actor, task_id: &str, force: bool) -> ApiRe
     Ok(log(p, a, e, json!({"released": task_id})))
 }
 
+/// Live claims; `silent` = no sign of life for 10 minutes.
 pub fn claims(p: &Project) -> ApiResult<Value> {
-    Ok(json!({"claims": p.claims()?}))
+    let now = unix_now();
+    let list: Vec<Value> = p
+        .claims()?
+        .iter()
+        .map(|c| {
+            let mut v = to_v(c);
+            v["heartbeat_at"] = json!(c.last_seen());
+            v["silent"] = json!(c.is_silent(now));
+            v
+        })
+        .collect();
+    Ok(json!({"claims": list}))
+}
+
+fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(0))
+}
+
+/// "Still working": refresh the actor's claims (one task or all) and keep them alive. Not logged.
+pub fn heartbeat(p: &Project, a: &Actor, task_id: Option<&str>, note: Option<&str>) -> ApiResult<Value> {
+    let touched = p.heartbeat(&a.name, task_id, note)?;
+    Ok(json!({"agent": a.name, "claims": touched}))
+}
+
+/// Record a gate's check result (`kind: gate`). A failing result reopens the gate; it is still logged.
+pub fn set_gate(p: &Project, a: &Actor, key: &str, mut evidence: Evidence) -> ApiResult<Value> {
+    if evidence.by.trim().is_empty() {
+        evidence.by.clone_from(&a.name);
+    }
+    let cmd: String = evidence.command.chars().take(60).collect();
+    let code = evidence.exit_code;
+    let (s, passed) = p.set_gate_result(key, evidence)?;
+    let v = json!({"stage": key, "passed": passed, "status": brief(&s, p)?});
+    let summary = if passed { format!("gate {key} passed: {cmd}") } else { format!("gate {key} failed ({code}): {cmd}") };
+    let e = entry("set_gate", summary, vec![key.into()], vec![], vec![stage_file(p, key)]);
+    Ok(log(p, a, e, v))
+}
+
+/// An agent reports the tokens / cost of its work (optionally for a stage). Pathloom only stores and sums it.
+pub fn report_usage(p: &Project, a: &Actor, usage: pathloom_core::Usage, stage: Option<&str>, note: &str) -> ApiResult<Value> {
+    usage.validate()?;
+    if let Some(k) = stage {
+        p.load_stage(k)?;
+    }
+    let note = note.replace(['\r', '\n'], " ");
+    let mut summary = format!("used {} in / {} out tokens", usage.tokens_in, usage.tokens_out);
+    if let Some(c) = usage.cost_usd {
+        summary.push_str(&format!(", ${c:.2}"));
+    }
+    if !note.trim().is_empty() {
+        summary.push_str(&format!(" ({})", note.trim()));
+    }
+    let mut e = entry("usage", summary, stage.map(|k| vec![k.to_string()]).unwrap_or_default(), vec![], vec![]);
+    e.usage = Some(usage);
+    Ok(log(p, a, e, json!({"recorded": true})))
+}
+
+pub fn usage_summary(p: &Project) -> ApiResult<Value> {
+    Ok(to_v(&p.usage_summary()?))
+}
+
+/// Import another tool's task list (`spec-kit`) through the normal apply path (review mode respected).
+pub fn import(
+    p: &Project,
+    a: &Actor,
+    text: &str,
+    prefix: Option<&str>,
+    board: Option<&str>,
+    dry_run: bool,
+    direct: bool,
+) -> ApiResult<Value> {
+    let (mut spec, report) = p.import_spec_kit(text, prefix)?;
+    spec.board = board.map(String::from);
+    let mut v = submit(p, &spec, &a.name, dry_run, direct)?;
+    v["import"] = to_v(&report);
+    Ok(log_submit(p, a, "import", &spec, v))
 }
 
 /// Latest log entries, newest first. `limit` 0 = 20, max 200.

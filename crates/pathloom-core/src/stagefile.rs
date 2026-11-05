@@ -13,8 +13,10 @@ pub fn is_valid_key(key: &str) -> bool {
         && b.iter().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
 }
 
-const KNOWN: [&str; 11] =
-    ["id", "title", "kind", "who", "due", "priority", "branch", "pr", "tags", "depends", "sessions"];
+const KNOWN: [&str; 14] = [
+    "id", "title", "kind", "who", "due", "priority", "branch", "pr", "tags", "depends", "sessions", "evidence", "artifacts",
+    "check",
+];
 
 fn opt_str(m: &Map<String, Value>, k: &str) -> Option<String> {
     m.get(k).and_then(scalar_str)
@@ -63,6 +65,10 @@ impl Stage {
         if let Some(Value::Array(a)) = map.get("tags") {
             st.tags = a.iter().filter_map(scalar_str).collect();
         }
+        if let Some(Value::Array(a)) = map.get("artifacts") {
+            st.artifacts = a.iter().filter_map(scalar_str).collect();
+        }
+        st.check = opt_str(&map, "check");
         if let Some(Value::Array(a)) = map.get("depends") {
             for d in a {
                 let dep = match d {
@@ -92,7 +98,26 @@ impl Stage {
                 Err(_) => keep_raw_sessions = true,
             }
         }
-        map.retain(|k, _| !KNOWN.contains(&k.as_str()) || (keep_raw_sessions && k == "sessions"));
+        // Same for a hand-edited, invalid `evidence` map.
+        let mut keep_raw_evidence = false;
+        if let Some(Value::Object(o)) = map.get("evidence") {
+            let parsed: Result<std::collections::BTreeMap<String, crate::evidence::Evidence>, String> = o
+                .iter()
+                .map(|(k, v)| {
+                    serde_json::from_value::<crate::evidence::Evidence>(v.clone())
+                        .map_err(|e| e.to_string())
+                        .and_then(|e| e.normalize().map_err(|e| e.to_string()))
+                        .map(|e| (k.clone(), e))
+                })
+                .collect();
+            match parsed {
+                Ok(m) => st.evidence = m,
+                Err(_) => keep_raw_evidence = true,
+            }
+        }
+        map.retain(|k, _| {
+            !KNOWN.contains(&k.as_str()) || (keep_raw_sessions && k == "sessions") || (keep_raw_evidence && k == "evidence")
+        });
         st.extra = map;
         parse_body(&mut st, body);
         Ok(st)
@@ -139,9 +164,27 @@ impl Stage {
                 .collect();
             line("depends", &format!("[{}]", d.join(", ")));
         }
+        if let Some(c) = &self.check {
+            line("check", &scalar(c, false));
+        }
+        if !self.artifacts.is_empty() {
+            let a: Vec<String> = self.artifacts.iter().map(|x| scalar(x, false)).collect();
+            line("artifacts", &format!("[{}]", a.join(", ")));
+        }
         if !self.sessions.is_empty() {
             let v = serde_json::to_value(&self.sessions).unwrap_or(Value::Null);
             line("sessions", &yaml_value(&v));
+        }
+        // Evidence only for tasks that exist and are done: undone or removed tasks lose it on the next write.
+        let done = self.done_task_ids();
+        let ev: Map<String, Value> = self
+            .evidence
+            .iter()
+            .filter(|(k, _)| done.contains(k.as_str()) || **k == self.key)
+            .map(|(k, e)| (k.clone(), serde_json::to_value(e).unwrap_or(Value::Null)))
+            .collect();
+        if !ev.is_empty() {
+            line("evidence", &yaml_value(&Value::Object(ev)));
         }
         for (k, v) in &self.extra {
             line(&scalar(k, false), &yaml_value(v));

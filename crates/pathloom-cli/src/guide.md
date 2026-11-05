@@ -28,6 +28,19 @@ your changes live. Files are the source of truth, so every change is a normal fi
 - Use `activity` (optionally `stage`) to see what others did lately before you touch a stage; every change of
   yours is logged there automatically.
 
+## Proof, liveness, hand-offs
+- Close tasks with proof: `set_task {task_id, done: true, evidence: {command, exit_code: 0, duration_ms?, summary?, log?}}`.
+  Run the real check first. Non-zero exit codes are refused. With `require_evidence: true` (in `project_info`) closing
+  a task of a normal stage without evidence fails with `EVIDENCE_REQUIRED` (also for `tasks_done` in `apply`).
+- `heartbeat {task_id?, note?}` keeps your claims alive and tells the user you are still working. Any logged action
+  counts as a sign of life; after 10 minutes without one the app shows your claim as silent.
+- `stages[].artifacts_add` in `apply` lists hand-off files (project-relative paths or http(s) links) on a stage;
+  `get_stage` returns them as `artifacts`.
+- `kind: gate` stages have `check` (a command). Run it yourself and report with `set_gate {key, evidence}`:
+  exit code 0 makes the gate done, anything else reopens it.
+- Optional `report_usage {tokens_in, tokens_out, cost_usd?, stage?, note?}`: the app sums it per agent and stage.
+- `import_tasks {format: "spec-kit", text}` turns a Spec Kit `tasks.md` into stages (phases), tasks and dependencies.
+
 ## Identity and sessions
 - `register_agent {name?, color?, avatar?, kind?}` sets your own display profile (id = your caller name; `name` up to 40 chars, `color` `#rgb`/`#rrggbb`,
   `avatar` one emoji or `assets/<file>.png`). The app shows it instead of a generated color. You can only register yourself; `list_agents` shows all profiles.
