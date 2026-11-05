@@ -6,7 +6,14 @@ body:
     id: what
     attributes:
       label: What happened
-      description: What you did, what you expected, and what you got instead.
+      description: The issue that you've encountered
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behaviour
+      description: What you expected to happen
     validations:
       required: true
   - type: textarea
