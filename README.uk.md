@@ -178,6 +178,16 @@ npm run tauri dev -w @pathloom/desktop
 
 Рання, але робоча версія (0.1). Перевірено на Windows. Збірки для Linux і macOS робить workflow релізу, але на реальних машинах їх ще не запускали. Що далі — у [docs/ideas.md](docs/ideas.md).
 
+## Підтримати проєкт
+
+Pathloom безкоштовний і відкритий. Якщо він економить тобі час, можна підтримати розробку в **USDT у мережі TRON (TRC20)**:
+
+```text
+TReYVcTGY9PRW9XCSFj95JJwJ6BSxsP74W
+```
+
+Надсилай на цю адресу лише USDT через TRC20: інші токени чи мережі можуть загубитися. Та сама адреса є в профілі автора на GitHub ([@XxArDy](https://github.com/XxArDy)) — звір, що вони збігаються. Дякую!
+
 ## Як долучитися
 
 Як зібрати проєкт, які перевірки пройти й яких правил дотримуватись — у [CONTRIBUTING.md](CONTRIBUTING.md) (англійською), будова коду — у [docs/architecture.md](docs/architecture.md). Про вразливості повідомляй за [SECURITY.md](SECURITY.md).

@@ -178,6 +178,16 @@ Tests: `cargo test --workspace` and `npm run test -w @pathloom/canvas`.
 
 Early but usable (0.1). Tested on Windows. Linux and macOS builds are produced by the release workflow but have not been tried on real machines yet. See [docs/ideas.md](docs/ideas.md) for what's next.
 
+## Support the project
+
+Pathloom is free and open source. If it saves you time, you can support its development with **USDT on the TRON network (TRC20)**:
+
+```text
+TReYVcTGY9PRW9XCSFj95JJwJ6BSxsP74W
+```
+
+Send only USDT via TRC20 to this address; other tokens or networks may be lost. The same address is listed on the author's GitHub profile ([@XxArDy](https://github.com/XxArDy)) — check that they match. Thank you!
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, checks and project rules, and [docs/architecture.md](docs/architecture.md) for how the code is organised. Security issues: [SECURITY.md](SECURITY.md).
