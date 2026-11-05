@@ -156,7 +156,9 @@ class EditorImpl implements Editor {
     window.addEventListener('keydown', this.onKeyDown);
     window.addEventListener('keyup', this.onKeyUp);
     document.fonts?.addEventListener?.('loadingdone', this.fontsHandler);
-    this.ro = new ResizeObserver(() => { this.resize(); if (this.autoFit) this.zoomToFit(); });
+    // Resizing clears the canvases: draw before the browser paints (ResizeObserver runs after layout, before
+    // paint), or a blank frame flashes when the side panel opens or closes.
+    this.ro = new ResizeObserver(() => { this.resize(); if (this.autoFit) this.zoomToFit(); this.drawNow(); });
     this.ro.observe(container);
     this.resize();
     this.loadBoard(opts.board);
@@ -1713,6 +1715,12 @@ class EditorImpl implements Editor {
       c.width = Math.round(this.width * this.dpr); c.height = Math.round(this.height * this.dpr);
     }
     this.invalidate();
+  }
+
+  /** Draw pending changes right away instead of on the next animation frame. */
+  private drawNow() {
+    if (this.raf) { cancelAnimationFrame(this.raf); this.raf = 0; }
+    if (!this.destroyed) this.frame();
   }
 
   private invalidate(s = true, i = true) {

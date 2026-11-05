@@ -50,6 +50,12 @@ function GateBox({ stage }: { stage: StageView }) {
   );
 }
 
+/** Close the panel and drop the card selection too, so clicking the same card opens it again. */
+function closeInspector() {
+  editorRef.current?.runCommand('edit.cancel');
+  useApp.getState().set({ selectedStage: null });
+}
+
 const isDone = (t: Task) => (t.sub.length ? t.sub.every((s) => s.done) : t.done);
 
 function useStageCall() {
@@ -177,7 +183,7 @@ export function Inspector({ stageKey }: { stageKey: string }) {
           <button role="tab" aria-selected={tab === 'details'} className={tab === 'details' ? 'on' : ''} onClick={() => setTab('details')}><IconListDetails size={14} />{t('inspector.details')}</button>
           <button role="tab" aria-selected={tab === 'file'} className={tab === 'file' ? 'on' : ''} onClick={() => setTab('file')}><IconFileText size={14} />{t('inspector.file')}</button>
         </div>
-        <button className="icon-btn push" aria-label={t('inspector.close')} onClick={() => set({ selectedStage: null })}><IconX size={16} /></button>
+        <button className="icon-btn push" aria-label={t('inspector.close')} onClick={closeInspector}><IconX size={16} /></button>
       </div>
       <div className="insp-scroll">
         {tab === 'file' ? (
