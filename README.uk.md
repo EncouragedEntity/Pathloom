@@ -253,13 +253,21 @@ npm run tauri dev -w @pathloom/desktop
 
 ## Підтримати проєкт
 
-Pathloom безкоштовний і відкритий. Якщо він економить тобі час, можна підтримати розробку в **USDT у мережі TRON (TRC20)**:
+Pathloom безкоштовний і відкритий. Якщо він економить тобі час, можна підтримати розробку криптовалютою.
+
+**USDT у мережі TRON (TRC20)**:
 
 ```text
 TReYVcTGY9PRW9XCSFj95JJwJ6BSxsP74W
 ```
 
-Надсилай на цю адресу лише USDT через TRC20: інші токени чи мережі можуть загубитися. Та сама адреса є в профілі автора на GitHub ([@XxArDy](https://github.com/XxArDy)) — звір, що вони збігаються. Дякую!
+**Monero (XMR)**:
+
+```text
+4ADwo8HNhcCVxSjMRzau7j3PnyF5TzMd2aBaLKJTNkqa9CRLGh9AjqALWepe5Twoe3EVypeP2euBtUVxoJgpsQtBNdjAwoJ
+```
+
+Надсилай на першу адресу лише USDT через TRC20, а на другу лише XMR: інші токени чи мережі можуть загубитися. Ті самі адреси є в профілі автора на GitHub ([@XxArDy](https://github.com/XxArDy)), звір, що вони збігаються. Дякую!
 
 ## Як долучитися
 

@@ -253,13 +253,21 @@ Early but usable (0.1). Tested on Windows. Linux and macOS builds are produced b
 
 ## Support the project
 
-Pathloom is free and open source. If it saves you time, you can support its development with **USDT on the TRON network (TRC20)**:
+Pathloom is free and open source. If it saves you time, you can support its development in crypto.
+
+**USDT on the TRON network (TRC20)**:
 
 ```text
 TReYVcTGY9PRW9XCSFj95JJwJ6BSxsP74W
 ```
 
-Send only USDT via TRC20 to this address; other tokens or networks may be lost. The same address is listed on the author's GitHub profile ([@XxArDy](https://github.com/XxArDy)) — check that they match. Thank you!
+**Monero (XMR)**:
+
+```text
+4ADwo8HNhcCVxSjMRzau7j3PnyF5TzMd2aBaLKJTNkqa9CRLGh9AjqALWepe5Twoe3EVypeP2euBtUVxoJgpsQtBNdjAwoJ
+```
+
+Send only USDT via TRC20 to the first address and only XMR to the second; other tokens or networks may be lost. The same addresses are listed on the author's GitHub profile ([@XxArDy](https://github.com/XxArDy)), so check that they match. Thank you!
 
 ## Contributing
 
