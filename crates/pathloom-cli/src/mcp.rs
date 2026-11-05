@@ -468,7 +468,7 @@ impl PathloomServer {
     }
 
     #[tool(
-        description = "Check project integrity: broken depends, cycles, bad task ids, cards of missing stages.",
+        description = "Check project integrity: broken depends, cycles, bad task ids, cards of missing stages. `hints` lists readability fixes (redundant links, oversized stages, missing descriptions): apply them.",
         annotations(read_only_hint = true)
     )]
     async fn validate(&self) -> CallToolResult {

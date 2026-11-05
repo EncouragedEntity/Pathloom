@@ -113,6 +113,46 @@ impl Project {
 
     /// Safe fixes only: drop `depends` entries on missing stages and card elements of missing stages.
     /// Returns a description of each fix. Everything else (cycles, bad ids) is left for a human.
+    /// Readability suggestions (not errors): `REDUNDANT_DEP` (A→C when A→B→C exists: drop it), `BIG_STAGE`
+    /// (more than 12 tasks: split it), `NO_DESCRIPTION` (a stage with tasks but no sentence on what it is for).
+    pub fn plan_hints(&self) -> Result<Vec<Issue>> {
+        let stages = self.load_stages()?;
+        let path = |k: &str| format!("{}/stages/{k}.md", self.config.plan_dir.trim_end_matches('/'));
+        let mut out = Vec::new();
+        let deps: std::collections::HashMap<&str, Vec<&str>> =
+            stages.iter().map(|s| (s.key.as_str(), s.depends.iter().filter(|d| !d.soft).map(|d| d.id.as_str()).collect())).collect();
+        // does `from` reach `to` through prerequisites, without using the direct link?
+        let reaches = |start: &str, target: &str, skip: &str| {
+            let mut stack: Vec<&str> = deps.get(start).map(|v| v.iter().copied().filter(|d| *d != skip).collect()).unwrap_or_default();
+            let mut seen: HashSet<&str> = stack.iter().copied().collect();
+            while let Some(n) = stack.pop() {
+                if n == target {
+                    return true;
+                }
+                for d in deps.get(n).into_iter().flatten() {
+                    if seen.insert(d) {
+                        stack.push(d);
+                    }
+                }
+            }
+            false
+        };
+        for s in &stages {
+            for d in s.depends.iter().filter(|d| !d.soft) {
+                if reaches(&s.key, &d.id, &d.id) {
+                    out.push(issue("REDUNDANT_DEP", format!("{} already waits for {} through another stage: drop this link", s.key, d.id), &path(&s.key)));
+                }
+            }
+            if s.tasks.len() > 12 {
+                out.push(issue("BIG_STAGE", format!("{} has {} tasks: split it into stages of 3-8", s.key, s.tasks.len()), &path(&s.key)));
+            }
+            if s.kind == StageKind::Stage && !s.tasks.is_empty() && s.description.trim().is_empty() {
+                out.push(issue("NO_DESCRIPTION", format!("{} has no description: say in one sentence what it is for", s.key), &path(&s.key)));
+            }
+        }
+        Ok(out)
+    }
+
     pub fn validate_fix(&self) -> Result<Vec<String>> {
         let mut ignored = Vec::new();
         let stages = self.scan_stages(&mut ignored)?;

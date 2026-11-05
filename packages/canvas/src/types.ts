@@ -69,6 +69,8 @@ export interface FrameElement extends BaseElement {
 export interface CardElement extends BaseElement {
   type: 'card';
   ref: string;             // stage key; h is recomputed by the renderer
+  /** Moved by hand on an auto-layout board: auto-layout keeps it where it is. */
+  pinned?: boolean;
 }
 
 export interface PortalElement extends BaseElement {
@@ -84,6 +86,8 @@ export interface Board {
   format: 'pathloom.board/1';
   title: string;
   style: 'clean' | 'sketch';
+  /** Re-arranged automatically after agent changes (pinned cards stay). */
+  autoLayout?: boolean;
   elements: Element[];
 }
 

@@ -101,9 +101,38 @@ fn demo_open(app: AppHandle, state: State<'_, AppState>, lang: String) -> CmdRes
     activate(&app, &state, project)
 }
 
+/// Recent projects whose folder still holds a Pathloom project (moved or deleted ones are skipped).
 #[tauri::command]
 fn recent_projects(app: AppHandle) -> Vec<recent::RecentProject> {
-    recent::load(&app)
+    recent::load(&app).into_iter().filter(|r| Path::new(&r.path).join(".pathloom/project.toml").is_file()).collect()
+}
+
+/// Remove a project from the recent list only; its files stay on disk.
+#[tauri::command]
+fn recent_forget(app: AppHandle, path: String) -> CmdResult<()> {
+    recent::forget(&app, &path).map_err(|e| e.to_string())
+}
+
+/// Turn auto-layout of a board on/off; turning it on arranges the board right away.
+#[tauri::command]
+fn board_auto_layout(state: State<'_, AppState>, name: String, on: bool) -> CmdResult<Board> {
+    with_project(&state, |p| {
+        let b = p.set_board_auto_layout(&name, on)?;
+        if on {
+            log_app(p, "layout_board", &format!("auto-layout on for {name}"), vec![], vec![]);
+        }
+        Ok(b)
+    })
+}
+
+/// Arrange the whole board now (pinned cards stay).
+#[tauri::command]
+fn board_arrange(state: State<'_, AppState>, name: String) -> CmdResult<Board> {
+    with_project(&state, |p| {
+        let b = p.layout_board(&name, &[])?;
+        log_app(p, "layout_board", &format!("arranged {name}"), vec![], vec![]);
+        Ok(b)
+    })
 }
 
 #[tauri::command]
@@ -573,6 +602,9 @@ pub fn run() {
             agent_setup,
             set_agent_changes,
             set_require_evidence,
+            recent_forget,
+            board_auto_layout,
+            board_arrange,
             artifact_open,
             usage_summary,
             gate_run,

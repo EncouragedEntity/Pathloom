@@ -278,6 +278,9 @@ pub struct Board {
     pub format: String,
     pub title: String,
     pub style: String,
+    /// Re-arrange the whole board after every agent change (cards with `"pinned": true` stay).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub auto_layout: bool,
     pub elements: Vec<Map<String, Value>>,
 }
 

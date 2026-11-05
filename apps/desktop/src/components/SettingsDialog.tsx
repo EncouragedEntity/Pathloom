@@ -106,7 +106,7 @@ function Shortcuts() {
 
 function General() {
   const { t, i18n } = useTranslation();
-  const { theme, renderStyle, customThemes, set } = useApp();
+  const { theme, renderStyle, customThemes, set, edgeHideRedundant, edgeBundle } = useApp();
   const [reopen, setReopen] = useState(reopenLastEnabled());
   return (
     <dl className="meta settings-general">
@@ -133,6 +133,10 @@ function General() {
       </dd>
       <dt>{t('menu.reopenLast')}</dt>
       <dd><input type="checkbox" checked={reopen} onChange={(e) => { setReopenLast(e.target.checked); setReopen(e.target.checked); }} /></dd>
+      <dt title={t('settings.edgeHideRedundantHint')}>{t('settings.edgeHideRedundant')}</dt>
+      <dd><input type="checkbox" checked={edgeHideRedundant} onChange={(e) => set({ edgeHideRedundant: e.target.checked })} /></dd>
+      <dt title={t('settings.edgeBundleHint')}>{t('settings.edgeBundle')}</dt>
+      <dd><input type="checkbox" checked={edgeBundle} onChange={(e) => set({ edgeBundle: e.target.checked })} /></dd>
     </dl>
   );
 }

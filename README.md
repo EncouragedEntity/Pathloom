@@ -31,6 +31,7 @@ Everything is local. No account, no cloud.
 |---|---|
 | **Board** | Infinite canvas, pan/zoom, rectangles, ellipses, diamonds, arrows that stick to shapes, lines, pencil, text, sticky notes, images (paste or drop), eraser, frames, groups, align & distribute, snap to grid, smart guides, minimap. |
 | **Roadmap** | Stage cards with task IDs (`AUTH-03`) and subtasks, dependencies (hard or soft), cycle protection, computed statuses, phases with progress, milestones. |
+| **Readable plans** | Auto-arrange keeps the board tidy after every agent change: phases become column blocks left to right, arrows cross as little as possible, cards you move by hand stay pinned. Hover a card to see only its chain. Implied arrows are hidden and arrows between phases are grouped into one with a count. Growing cards push the ones below them down. |
 | **Focus mode** | `E` hides finished work and highlights what you can do right now. |
 | **Views** | Board, List (all tasks with filters), Overview (progress, what's next, blockers, deadlines, latest notes). |
 | **Agents** | `pathloom` CLI and `pathloom mcp` server, live reload, change highlights, one-click undo of agent changes, review mode with proposals shown as dashed cards. |
@@ -100,6 +101,8 @@ Other MCP clients (Cursor, etc.) use the same server: `{"command": "pathloom", "
 | `set_gate`, `report_usage` | Report a gate's check result; optionally report tokens and cost. |
 | `import_tasks` | Turn a GitHub Spec Kit `tasks.md` into stages, tasks and dependencies. |
 | `layout_board`, `validate` | Tidy the board, check the plan for problems. |
+
+**Keeping the board readable.** Turn on *Auto-arrange* (bottom bar) and the board re-arranges itself whenever an agent changes the plan; the wand button arranges it once. Hover or select a card to light up what it waits for and what waits for it. In Settings you can switch off hiding implied arrows and grouping arrows between phases. Agents get rules for readable plans (phases in time order, a one-line description per stage, 3-8 tasks, only direct dependencies), and `validate` lists `hints` when a plan breaks them.
 
 **Done means proven.** An agent closes a task with the check it ran (`set_task` with `evidence`, or `pathloom task done AUTH-02 --run "cargo test"`): the task shows as verified, and a failing check never closes it. Turn on *Agents must prove a task is done* in Settings to require it. **Gate** stages (`kind: gate`, `check: npm test`) are done only when their check passes. Stages can list hand-off files (spec, plan) as **artifacts**, and Overview shows the **spending** agents report.
 

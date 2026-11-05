@@ -27,6 +27,14 @@ pub fn load(app: &AppHandle) -> Vec<RecentProject> {
         .unwrap_or_default()
 }
 
+/// Drop `path` from the list (the project folder itself is not touched).
+pub fn forget(app: &AppHandle, path: &str) -> std::io::Result<()> {
+    let Some(f) = file(app) else { return Ok(()) };
+    let mut list = load(app);
+    list.retain(|r| r.path != path);
+    fs::write(f, serde_json::to_string_pretty(&list).unwrap_or_default())
+}
+
 pub fn remember(app: &AppHandle, path: &str, name: &str) -> std::io::Result<()> {
     let Some(f) = file(app) else { return Ok(()) };
     let now = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);

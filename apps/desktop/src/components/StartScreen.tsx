@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { IconFolderOpen, IconPlus, IconClock, IconSparkles } from '@tabler/icons-react';
+import { IconFolderOpen, IconPlus, IconClock, IconSparkles, IconX } from '@tabler/icons-react';
 import { useApp } from '../store';
 import { api, errorText, type RecentProject } from '../api';
 import { createProject, openProject } from '../projectActions';
@@ -45,6 +45,10 @@ export function StartScreen() {
                 <IconClock size={16} />
                 <span className="rn">{r.name}</span>
                 <span className="rp">{r.path}</span>
+              </button>
+              <button className="icon-btn forget" title={t('start.forget')} aria-label={t('start.forget')}
+                onClick={() => void api.recentForget(r.path).then(() => setRecent((l) => l.filter((x) => x.path !== r.path)))}>
+                <IconX size={14} />
               </button>
             </li>
           ))}

@@ -1,3 +1,4 @@
+import type { EdgeOptions } from './edgeview';
 import type { AgentProfile } from './agents';
 import type { CanvasCommand, Keymap } from './keymap';
 import type { Board, Ghost, StageView, ThemeTokens } from './types';
@@ -47,6 +48,7 @@ export interface CanvasLabels {
   frameProgress: string;
   ctxConvertToStage: string; ctxDuplicate: string; ctxDelete: string;
   ctxBringToFront: string; ctxSendToBack: string; ctxLock: string; ctxUnlock: string;
+  ctxPin: string; ctxUnpin: string;
   ctxOpenStage: string; ctxRename: string;
   ctxGroup: string; ctxUngroup: string;
   ctxAlignLeft: string; ctxAlignCenter: string; ctxAlignRight: string; ctxAlignTop: string; ctxAlignMiddle: string; ctxAlignBottom: string;
@@ -74,6 +76,7 @@ export const DEFAULT_LABELS: CanvasLabels = {
   frameProgress: '{done} of {total} stages',
   ctxConvertToStage: 'Convert to stage', ctxDuplicate: 'Duplicate', ctxDelete: 'Delete',
   ctxBringToFront: 'Bring to front', ctxSendToBack: 'Send to back', ctxLock: 'Lock', ctxUnlock: 'Unlock',
+  ctxPin: 'Keep in place (auto-layout)', ctxUnpin: 'Let auto-layout move it',
   ctxOpenStage: 'Open stage', ctxRename: 'Rename',
   ctxGroup: 'Group', ctxUngroup: 'Ungroup',
   ctxAlignLeft: 'Align left', ctxAlignCenter: 'Align center', ctxAlignRight: 'Align right',
@@ -133,6 +136,8 @@ export interface Editor {
   getSnap(): boolean;
   /** Small overview in the bottom-right corner showing all elements and the viewport; click or drag to pan. */
   setMinimap(on: boolean): void;
+  /** Dependency arrows: hide redundant ones, bundle arrows between frames. Both on by default. */
+  setEdgeOptions(opts: EdgeOptions): void;
   getMinimap(): boolean;
   getBoard(): Board;
   destroy(): void;

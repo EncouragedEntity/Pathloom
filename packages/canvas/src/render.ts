@@ -16,6 +16,7 @@ import { execAlpha, frameHeaderRect } from './ops';
 import { STICKY_PAD, wrapLines, type Guide } from './arrange';
 import type { ImageCache } from './media';
 import type { AgentProfile } from './agents';
+import { edgeKey, type EdgeBundle, type EdgeView } from './edgeview';
 
 export interface RenderState {
   cam: Camera;
@@ -39,6 +40,10 @@ export interface RenderState {
   frameStats: ReadonlyMap<string, { done: number; total: number }>;
   images: ImageCache;
   agents: readonly AgentProfile[];
+  /** Which arrows to draw (redundant hidden, bundles, focused chain). */
+  view: EdgeView;
+  /** Board re-arranges itself: pinned cards get a marker. */
+  autoLayout: boolean;
 }
 
 export interface Overlay {
@@ -199,15 +204,21 @@ export class Renderer {
     if (!s.edges.length) return;
     const t = s.theme;
     const cardEl = s.cards;
-    for (const ed of s.edges) {
+    const focus = s.view.focus;
+    for (const b of s.view.bundles) this.drawBundle(ctx, s, b, focus ? 0.12 : 1);
+    for (const ed of s.view.visible) {
       const a = cardEl.get(ed.from), b = cardEl.get(ed.to);
       if (!a || !b) continue;
       const bz = edgeCurve(a, b, isMilestone(s.stages.get(ed.from)), isMilestone(s.stages.get(ed.to)));
       const xs = bz.map((p) => p[0]), ys = bz.map((p) => p[1]);
       if (Math.max(...xs) < view.minX || Math.min(...xs) > view.maxX || Math.max(...ys) < view.minY || Math.min(...ys) > view.maxY) continue;
       const sel = s.selEdge?.from === ed.from && s.selEdge.to === ed.to;
-      const hi = sel || s.selected.has(a.id) || s.selected.has(b.id);
-      const k = s.exec ? Math.max(execAlpha('card', s.stages.get(ed.from)?.status), execAlpha('card', s.stages.get(ed.to)?.status)) : 1;
+      const inFocus = !!focus?.edges.has(edgeKey(ed));
+      const hi = sel || inFocus;
+      let k = s.exec ? Math.max(execAlpha('card', s.stages.get(ed.from)?.status), execAlpha('card', s.stages.get(ed.to)?.status)) : 1;
+      // satisfied arrows (prerequisite done) step back; in focus mode everything outside the chain fades
+      if (focus && !inFocus) k *= 0.12;
+      else if (!hi && ed.fromDone) k *= 0.4;
       const color = hi ? t.accent : ed.fromDone ? mixColors(t.ok, t.edge, 0.7) : t.edge;
       ctx.save();
       ctx.globalAlpha = k;
@@ -226,10 +237,50 @@ export class Renderer {
     }
   }
 
+  /** One thick arrow from frame to frame with the number of arrows it stands for. */
+  private drawBundle(ctx: CanvasRenderingContext2D, s: RenderState, b: EdgeBundle, alpha: number) {
+    const fa = s.scene.get(b.fromFrame), fb = s.scene.get(b.toFrame);
+    if (!fa || !fb) return;
+    const mid = (keys: string[]) => {
+      const ys = keys.map((k) => s.cards.get(k)).filter((c): c is CardElement => !!c).map((c) => c.y + c.h / 2);
+      return ys.length ? ys.reduce((x, y) => x + y, 0) / ys.length : 0;
+    };
+    const p0: Point = [fa.x + fa.w, mid(b.edges.map((e) => e.from))];
+    const p3: Point = [fb.x, mid(b.edges.map((e) => e.to))];
+    const dx = Math.max(40, Math.abs(p3[0] - p0[0]) * 0.5);
+    const t = s.theme, n = b.edges.length, done = b.edges.every((e) => e.fromDone);
+    const color = done ? mixColors(t.ok, t.edge, 0.7) : t.edge;
+    ctx.save();
+    ctx.globalAlpha = alpha * (done ? 0.5 : 1);
+    ctx.strokeStyle = color; ctx.fillStyle = color;
+    ctx.lineWidth = 2.5 + Math.min(4, Math.log2(n) * 1.5);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(p0[0], p0[1]);
+    ctx.bezierCurveTo(p0[0] + dx, p0[1], p3[0] - dx, p3[1], p3[0] - 10, p3[1]);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(p3[0], p3[1]); ctx.lineTo(p3[0] - 14, p3[1] - 7); ctx.lineTo(p3[0] - 14, p3[1] + 7);
+    ctx.closePath(); ctx.fill();
+    // count pill at the middle of the curve
+    const mx = (p0[0] + p3[0]) / 2, my = (p0[1] + p3[1]) / 2, txt = `×${n}`;
+    // readable at any zoom: at least ~11px on screen
+    const fs = Math.max(13, 11 / s.cam.scale);
+    ctx.font = fontOf(fs, t.fontUi, 600);
+    const w = measureText(txt, ctx.font) + fs, h = fs * 1.6;
+    ctx.beginPath(); ctx.roundRect(mx - w / 2, my - h / 2, w, h, h / 2);
+    ctx.fillStyle = t.panel; ctx.fill(); ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.fillStyle = t.text; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(txt, mx, my + 0.5);
+    ctx.restore();
+  }
+
   // ---- elements ----------------------------------------------------------------------------
 
   private drawElement(ctx: CanvasRenderingContext2D, el: Element, s: RenderState) {
-    const dim = s.exec ? execAlpha(el.type, el.type === 'card' ? s.stages.get((el as CardElement).ref)?.status : undefined) : 1;
+    let dim = s.exec ? execAlpha(el.type, el.type === 'card' ? s.stages.get((el as CardElement).ref)?.status : undefined) : 1;
+    // focus mode: cards outside the hovered/selected card's chain step back
+    if (el.type === 'card' && s.view.focus && !s.view.focus.nodes.has((el as CardElement).ref)) dim *= 0.45;
     if (lodDot(el, s.cam.scale)) {
       // sub-2px element: one filled rect instead of the real geometry
       const k = Math.max(1 / s.cam.scale, 0);
@@ -247,7 +298,10 @@ export class Renderer {
       case 'line': case 'arrow': this.drawLinear(ctx, el as LinearElement, s); break;
       case 'freedraw': this.drawFree(ctx, el as FreedrawElement, s); break;
       case 'image': this.drawImage(ctx, el as ImageElement, s); break;
-      case 'card': this.drawCard(ctx, el as CardElement, s); break;
+      case 'card':
+        this.drawCard(ctx, el as CardElement, s);
+        if (s.autoLayout && (el as CardElement).pinned) this.drawPin(ctx, el as CardElement, s);
+        break;
       case 'frame': this.drawFrame(ctx, el, s); break;
       default: this.drawPlaceholder(ctx, el, s);
     }
@@ -626,6 +680,17 @@ export class Renderer {
       ctx.fillText(ellipsize(txt, MS.w - 8, (x) => measureText(x, ctx.font)), cx, g.subY + MS.subH / 2);
     }
     ctx.textAlign = 'left';
+  }
+
+  /** Small pin on the top-left corner: auto-layout leaves this card where it is. */
+  private drawPin(ctx: CanvasRenderingContext2D, el: CardElement, s: RenderState) {
+    // drawCard translated the context: back to world coordinates (drawElement's save/restore stays paired)
+    ctx.restore(); ctx.save();
+    const t = s.theme, r = Math.max(7, 6 / s.cam.scale), x = el.x + r * 0.6, y = el.y + r * 0.6;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = t.accent; ctx.fill();
+    ctx.lineWidth = r * 0.3; ctx.strokeStyle = t.bg; ctx.stroke();
+    ctx.beginPath(); ctx.arc(x, y, r * 0.35, 0, Math.PI * 2); ctx.fillStyle = t.bg; ctx.fill();
   }
 
   private drawCard(ctx: CanvasRenderingContext2D, el: CardElement, s: RenderState, ghost?: StageView) {

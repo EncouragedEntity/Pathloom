@@ -27,6 +27,9 @@ interface AppStore {
   paletteOpen: boolean;
   snap: boolean;
   minimap: boolean;
+  /** Dependency arrows: hide A→C when A→B→C, bundle arrows between frames (persisted). */
+  edgeHideRedundant: boolean;
+  edgeBundle: boolean;
   exec: boolean;
   settingsTab: 'general' | 'keys' | 'agents' | null;
   proposals: Proposal[];
@@ -103,6 +106,8 @@ export const useApp = create<AppStore>((set, get) => ({
   paletteOpen: false,
   snap: false,
   minimap: false,
+  edgeHideRedundant: localStorage.getItem('pathloom.edgeHideRedundant') !== '0',
+  edgeBundle: localStorage.getItem('pathloom.edgeBundle') !== '0',
   exec: false,
   settingsTab: null,
   proposals: [],
@@ -193,4 +198,12 @@ export const useApp = create<AppStore>((set, get) => ({
 // Best effort: flush pending board writes when the window closes.
 window.addEventListener('beforeunload', () => {
   void useApp.getState().flushSave();
+});
+
+// Persist the arrow display options.
+useApp.subscribe((st, prev) => {
+  try {
+    if (st.edgeHideRedundant !== prev.edgeHideRedundant) localStorage.setItem('pathloom.edgeHideRedundant', st.edgeHideRedundant ? '1' : '0');
+    if (st.edgeBundle !== prev.edgeBundle) localStorage.setItem('pathloom.edgeBundle', st.edgeBundle ? '1' : '0');
+  } catch { /* storage unavailable: keep the in-memory value */ }
 });

@@ -312,7 +312,8 @@ pub fn layout(p: &Project, a: &Actor, board: &str, only_new: &[String]) -> ApiRe
 pub fn validate(p: &Project, a: &Actor, fix: bool) -> ApiResult<Value> {
     let fixed = if fix { p.validate_fix()? } else { vec![] };
     let issues = p.validate()?;
-    let v = json!({"ok": issues.is_empty(), "issues": issues, "fixed": fixed});
+    let hints = p.plan_hints().unwrap_or_default();
+    let v = json!({"ok": issues.is_empty(), "issues": issues, "fixed": fixed, "hints": hints});
     if fixed.is_empty() {
         return Ok(v);
     }

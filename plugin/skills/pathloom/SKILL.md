@@ -35,6 +35,7 @@ board: roadmap
 stages:
   - id: AUTH
     title: Authentication
+    description: Users can sign up and log in; done when sessions survive a restart.
     who: ai
     priority: high
     depends: [CORE]
@@ -44,7 +45,7 @@ stages:
     kind: milestone
     depends: [AUTH]
 frames:
-  - name: "Phase 1"
+  - name: "1 · Foundation"
     members: [CORE, AUTH]
 ```
 
@@ -61,6 +62,19 @@ frames:
    - `activity` shows what other agents and the user did recently. Read it when you start a session.
 4. Keep `branch` on a stage in sync with the git branch you work on (`apply` with `branch: feat/x`).
 5. Run `validate` after larger edits.
+
+## Make the board readable
+
+The user reads the plan as a picture, left to right. Follow these rules whenever you create or restructure it:
+
+- **Frames are phases in time order**, not status buckets. Name them with a number and the goal: `1 · Foundation`, `2 · MVP (Dec)`, `3 · Release`. Never make frames like "Done", "Now", "Next", "Later" or "Bugs": status is computed and shown by colour, and the app has Active/Done filters. Put bug and debt stages into the phase where they will be fixed.
+- **Every stage says what it is for**: a short outcome title (up to ~40 characters, e.g. "Login with Google") and a one-sentence `description` in `apply` (why it exists, what is done when it is done).
+- **3-8 tasks per stage.** More than 12: split the stage.
+- **Only direct prerequisites in `depends`.** If C needs B and B needs A, C depends on B only, never also on A. Use `soft: true` for "better after, but not blocked".
+- **A milestone depends on the last stages of its phase**, not on every stage of the project.
+- After a bigger change run `validate` and fix every `hints` entry (`REDUNDANT_DEP`, `BIG_STAGE`, `NO_DESCRIPTION`).
+- Positions: if the board has auto-layout on, the app re-arranges it after your change; otherwise call `layout_board` after restructuring many cards. Never move cards the user placed by hand.
+- Finish with a 3-5 line summary for the user: the phases and what comes next.
 
 ## Importing a plan
 

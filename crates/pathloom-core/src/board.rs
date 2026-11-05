@@ -15,6 +15,7 @@ impl Board {
             format: BOARD_FORMAT.into(),
             title: title.into(),
             style: "clean".into(),
+            auto_layout: false,
             elements: vec![],
         }
     }
@@ -27,11 +28,15 @@ impl Board {
     pub fn to_canonical_json(&self) -> String {
         let q = |s: &str| serde_json::to_string(s).unwrap_or_else(|_| "\"\"".into());
         let mut out = format!(
-            "{{\n  \"format\": {},\n  \"title\": {},\n  \"style\": {},\n  \"elements\": [",
+            "{{\n  \"format\": {},\n  \"title\": {},\n  \"style\": {},\n",
             q(&self.format),
             q(&self.title),
             q(&self.style)
         );
+        if self.auto_layout {
+            out.push_str("  \"autoLayout\": true,\n");
+        }
+        out.push_str("  \"elements\": [");
         if self.elements.is_empty() {
             out.push_str("]\n}\n");
             return out;

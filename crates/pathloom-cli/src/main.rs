@@ -439,7 +439,11 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
                 for i in v["issues"].as_array().into_iter().flatten() {
                     o.push(format!("{}: {} ({})", s(i, "code"), s(i, "message"), s(i, "path")));
                 }
-                if o.is_empty() { "OK: no problems found".into() } else { o.join("\n") }
+                let mut out = if o.is_empty() { "OK: no problems found".to_string() } else { o.join("\n") };
+                for h in v["hints"].as_array().into_iter().flatten() {
+                    out.push_str(&format!("\nhint {}: {}", s(h, "code"), s(h, "message")));
+                }
+                out
             });
             if v["ok"] != true {
                 return Ok(ExitCode::FAILURE);

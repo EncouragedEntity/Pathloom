@@ -7,7 +7,8 @@
     "noRecent": "No recent projects yet",
     "pickFolderNew": "Choose a folder for the new project",
     "pickFolderOpen": "Choose a project folder",
-    "demo": "Open demo"
+    "demo": "Open demo",
+    "forget": "Remove from the list (files stay)"
   },
   "sidebar": {
     "search": "Search stages and tasks",
@@ -107,7 +108,11 @@
     "ghostBadge": "Proposed",
     "milestoneInputs": "{done} of {total} inputs",
     "claimedBy": "{agent} is on it",
-    "working": "working"
+    "working": "working",
+    "autoLayout": "Auto-arrange this board after agent changes (cards you move stay put)",
+    "arrangeNow": "Arrange the board now",
+    "ctxPin": "Keep in place (auto-layout)",
+    "ctxUnpin": "Let auto-layout move it"
   },
   "common": {
     "undo": "Undo",
@@ -230,7 +235,11 @@
     "cliFound": "The pathloom CLI is installed next to the app:",
     "cliMissing": "The CLI was not found next to the app (dev build). Build it with npm run build:cli.",
     "requireEvidence": "Agents must prove a task is done",
-    "requireEvidenceHint": "An agent can close a task only with a passing check (command and exit code 0). Your own clicks are not affected."
+    "requireEvidenceHint": "An agent can close a task only with a passing check (command and exit code 0). Your own clicks are not affected.",
+    "edgeHideRedundant": "Hide implied arrows",
+    "edgeHideRedundantHint": "A → C is not drawn when A → B → C already shows it",
+    "edgeBundle": "Group arrows between phases",
+    "edgeBundleHint": "Arrows from one frame to another become one thick arrow with a count; hover a card to see its own arrows"
   },
   "agent": {
     "conflict": "This board was changed outside the app while you had unsaved edits.",

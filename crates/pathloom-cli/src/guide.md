@@ -28,6 +28,19 @@ your changes live. Files are the source of truth, so every change is a normal fi
 - Use `activity` (optionally `stage`) to see what others did lately before you touch a stage; every change of
   yours is logged there automatically.
 
+## Make the board readable (rules)
+
+The user reads the plan as a picture, left to right. Follow these rules whenever you create or restructure it:
+
+- **Frames are phases in time order**, not status buckets. Name them with a number and the goal: `1 · Foundation`, `2 · MVP (Dec)`, `3 · Release`. Never make frames like "Done", "Now", "Next", "Later" or "Bugs": status is computed and shown by colour, and the app has Active/Done filters. Put bug and debt stages into the phase where they will be fixed.
+- **Every stage says what it is for**: a short outcome title (up to ~40 characters, e.g. "Login with Google") and a one-sentence `description` in `apply` (why it exists, what is done when it is done).
+- **3-8 tasks per stage.** More than 12: split the stage.
+- **Only direct prerequisites in `depends`.** If C needs B and B needs A, C depends on B only, never also on A. Use `soft: true` for "better after, but not blocked".
+- **A milestone depends on the last stages of its phase**, not on every stage of the project.
+- After a bigger change run `validate` and fix every `hints` entry (`REDUNDANT_DEP`, `BIG_STAGE`, `NO_DESCRIPTION`).
+- Positions: if the board has auto-layout on, the app re-arranges it after your change; otherwise call `layout_board` after restructuring many cards. Never move cards the user placed by hand.
+- Finish with a 3-5 line summary for the user: the phases and what comes next.
+
 ## Proof, liveness, hand-offs
 - Close tasks with proof: `set_task {task_id, done: true, evidence: {command, exit_code: 0, duration_ms?, summary?, log?}}`.
   Run the real check first. Non-zero exit codes are refused. With `require_evidence: true` (in `project_info`) closing

@@ -60,9 +60,15 @@ export function ProjectMenu() {
           <button role="menuitem" onClick={() => run(() => openProject())}><IconFolderOpen size={15} />{t('menu.openFolder')}<kbd>{label('app.openFolder', keys)}</kbd></button>
           {others.length > 0 && <div className="pm-sec">{t('start.recent')}</div>}
           {others.map((r) => (
-            <button key={r.path} role="menuitem" title={r.path} onClick={() => run(() => openProject(r.path))}>
-              <IconClock size={15} /><span className="pm-name">{r.name}</span>
-            </button>
+            <div key={r.path} className="pm-recent">
+              <button role="menuitem" title={r.path} onClick={() => run(() => openProject(r.path))}>
+                <IconClock size={15} /><span className="pm-name">{r.name}</span>
+              </button>
+              <button className="icon-btn forget" title={t('start.forget')} aria-label={t('start.forget')}
+                onClick={() => void api.recentForget(r.path).then(() => setRecent((l) => l.filter((x) => x.path !== r.path)))}>
+                <IconX size={13} />
+              </button>
+            </div>
           ))}
           <div className="pm-sep" />
           <div className="pm-sec">{t('menu.settings')}</div>

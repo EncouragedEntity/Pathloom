@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import {
   IconHandStop, IconPointer, IconSquare, IconDiamond, IconCircle, IconArrowUpRight, IconLine,
   IconPencil, IconTypography, IconLayoutCards, IconMinus, IconPlus, IconMaximize,
-  IconArrowBackUp, IconArrowForwardUp, IconFrame, IconNote, IconPhoto, IconEraser, IconGridDots, IconMap2,
+  IconArrowBackUp, IconArrowForwardUp, IconLayoutDistributeHorizontal, IconWand, IconFrame, IconNote, IconPhoto, IconEraser, IconGridDots, IconMap2,
 } from '@tabler/icons-react';
 import { createEditor, type CanvasHost, type Tool } from '@pathloom/canvas';
 import { api, assetUrl, errorText } from '../api';
@@ -38,6 +38,9 @@ export function CanvasView() {
   const renderStyle = useApp((s) => s.renderStyle);
   const snap = useApp((s) => s.snap);
   const minimap = useApp((s) => s.minimap);
+  const edgeHideRedundant = useApp((s) => s.edgeHideRedundant);
+  const edgeBundle = useApp((s) => s.edgeBundle);
+  const autoLayout = useApp((s) => !!s.board?.autoLayout);
   const agents = useApp((s) => s.agents);
   const customThemes = useApp((s) => s.customThemes);
   const themeObj = findTheme(theme, customThemes);
@@ -117,6 +120,8 @@ export function CanvasView() {
         ctxLock: t('canvas.ctxLock'),
         ctxUnlock: t('canvas.ctxUnlock'),
         ctxOpenStage: t('canvas.ctxOpenStage'),
+        ctxPin: t('canvas.ctxPin'),
+        ctxUnpin: t('canvas.ctxUnpin'),
         ctxRename: t('canvas.ctxRename'),
         ctxGroup: t('commands.edit.group'),
         ctxUngroup: t('commands.edit.ungroup'),
@@ -161,6 +166,7 @@ export function CanvasView() {
 
   useEffect(() => { editorRef.current?.setSnap(snap); }, [snap]);
   useEffect(() => { editorRef.current?.setMinimap(minimap); }, [minimap]);
+  useEffect(() => { editorRef.current?.setEdgeOptions({ hideRedundant: edgeHideRedundant, bundle: edgeBundle }); }, [edgeHideRedundant, edgeBundle]);
   useEffect(() => { editorRef.current?.setAgentProfiles(agents); }, [agents]);
 
   const keysJson = JSON.stringify(keys);
@@ -194,9 +200,28 @@ export function CanvasView() {
         <button className={snap ? 'on' : ''} aria-pressed={snap} title={`${t('commands.view.toggleSnap')} (${label('view.toggleSnap', keys)})`} onClick={() => useApp.getState().set({ snap: !snap })}><IconGridDots size={15} /></button>
         <button className={minimap ? 'on' : ''} aria-pressed={minimap} title={t('canvas.minimap')} onClick={() => useApp.getState().set({ minimap: !minimap })}><IconMap2 size={15} /></button>
         <span className="vsep" />
+        <button className={autoLayout ? 'on' : ''} aria-pressed={autoLayout} title={t('canvas.autoLayout')} onClick={() => void boardLayout(autoLayout ? 'off' : 'on')}><IconLayoutDistributeHorizontal size={15} /></button>
+        <button title={t('canvas.arrangeNow')} aria-label={t('canvas.arrangeNow')} onClick={() => void boardLayout('now')}><IconWand size={15} /></button>
+        <span className="vsep" />
         <button aria-label={t('common.undo')} title={`${t('common.undo')} (${label('edit.undo', keys)})`} onClick={() => editorRef.current?.undo()}><IconArrowBackUp size={15} /></button>
         <button aria-label={t('common.redo')} title={`${t('common.redo')} (${label('edit.redo', keys)})`} onClick={() => editorRef.current?.redo()}><IconArrowForwardUp size={15} /></button>
       </div>
     </>
   );
+}
+
+/** Auto-layout on/off or "arrange now" for the active board: saves pending edits first, then shows the result. */
+async function boardLayout(mode: 'on' | 'off' | 'now'): Promise<void> {
+  const st = useApp.getState();
+  const name = st.activeBoard;
+  if (!name) return;
+  try {
+    await st.flushSave();
+    const board = mode === 'now' ? await api.boardArrange(name) : await api.boardAutoLayout(name, mode === 'on');
+    useApp.getState().set({ board });
+    editorRef.current?.setBoard(board, { keepCamera: mode === 'off' });
+    if (mode !== 'off') editorRef.current?.zoomToFit();
+  } catch (e) {
+    useApp.getState().set({ error: errorText(e) });
+  }
 }

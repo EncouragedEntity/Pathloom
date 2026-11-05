@@ -1,6 +1,7 @@
 import type { Board, CardElement, Ghost, Element, FrameElement, ImageElement, LinearElement, FreedrawElement, ShapeElement, StageView, TextElement, ThemeTokens } from './types';
 import type { CanvasHost, CanvasLabels, Editor, EditorOptions, EditorStats, Tool } from './editor-types';
 import { DEFAULT_LABELS } from './editor-types';
+import { edgeView, pushApart, type EdgeOptions, type EdgeView } from './edgeview';
 import { Scene } from './scene';
 import { History, type Change } from './history';
 import { clampScale, fitBounds, screenToWorld, worldToScreen, zoomAt, type Camera } from './camera';
@@ -318,7 +319,39 @@ class EditorImpl implements Editor {
   }
 
   getBoard(): Board {
-    return { format: 'pathloom.board/1', title: this.title, style: this.style, elements: this.scene.all().map(clone) };
+    return {
+      format: 'pathloom.board/1', title: this.title, style: this.style,
+      ...(this.autoLayout ? { autoLayout: true } : {}),
+      elements: this.scene.all().map(clone),
+    };
+  }
+
+  setEdgeOptions(opts: EdgeOptions) {
+    if (opts.hideRedundant === this.edgeOpts.hideRedundant && opts.bundle === this.edgeOpts.bundle) return;
+    this.edgeOpts = { ...opts }; this.invalidate();
+  }
+
+  // ---- edge view: redundant / bundled / focused arrows ----
+  private autoLayout = false;
+  private edgeOpts: EdgeOptions = { hideRedundant: true, bundle: true };
+  private hoverKey: string | null = null;
+  private evCache: { rev: number; srev: number; opts: EdgeOptions; focus: string | null; view: EdgeView } | null = null;
+
+  /** Card whose chain is highlighted: the hovered card, else the single selected card. */
+  private focusKey(): string | null {
+    if (this.hoverKey) return this.hoverKey;
+    const one = this.singleSelected();
+    return one?.type === 'card' ? (one as CardElement).ref : null;
+  }
+
+  private edgeViewNow(): EdgeView {
+    const { edges } = this.edges(), focus = this.focusKey(), c = this.evCache;
+    if (c && c.rev === this.scene.rev && c.srev === this.stagesRev && c.opts === this.edgeOpts && c.focus === focus) return c.view;
+    const cards = this.edges().cards;
+    const frameOf = (k: string) => cards.get(k)?.frame;
+    const view = edgeView(edges, this.edgeOpts, frameOf, focus);
+    this.evCache = { rev: this.scene.rev, srev: this.stagesRev, opts: this.edgeOpts, focus, view };
+    return view;
   }
 
   panBy(dx: number, dy: number) { this.anim = null; this.autoFit = false; this.setCamera({ ...this.cam, x: this.cam.x + dx, y: this.cam.y + dy }); }
@@ -368,6 +401,7 @@ class EditorImpl implements Editor {
   // ---- scene plumbing ----------------------------------------------------------------------
 
   private loadBoard(board: Board) {
+    this.autoLayout = !!board.autoLayout;
     this.scene.load(board.elements.map(clone));
     this.relayoutCards(false);
     this.remeasureTexts();
@@ -413,14 +447,41 @@ class EditorImpl implements Editor {
 
   /** Store computed card heights back on the elements (and keep bound arrows attached). */
   private relayoutCards(emit: boolean) {
-    const changed = new Set<string>();
+    const changed = new Set<string>(), grown: string[] = [];
     for (const el of this.scene.all()) {
       if (el.type !== 'card') continue;
       const st = this.stages.get((el as CardElement).ref);
       const L = st && this.layoutOf(st), h = L ? L.h : MISSING_H, w = L ? L.w : CARD_W;
-      if (el.h !== h || el.w !== w) { this.scene.set({ ...el, x: el.x + (el.w - w) / 2, w, h }); changed.add(el.id); } // keep the centre when the width changes
+      if (el.h !== h || el.w !== w) {
+        if (h > el.h) grown.push(el.id);
+        this.scene.set({ ...el, x: el.x + (el.w - w) / 2, w, h }); changed.add(el.id); // keep the centre when the width changes
+      }
+    }
+    // A card that grew (new tasks) pushes the cards under it down instead of covering them.
+    if (grown.length && !this.exec) {
+      const cards = this.scene.all().filter((e) => e.type === 'card');
+      for (const [id, y] of pushApart(cards, grown)) { const el = this.scene.get(id); if (el) { this.scene.set({ ...el, y }); changed.add(id); } }
+      this.growFrames(changed);
     }
     if (changed.size) { this.reroute(changed); if (emit) this.emitBoard(); }
+  }
+
+  /** Frames that hold a changed card grow to keep all their members inside (they never shrink here). */
+  private growFrames(changed: Set<string>) {
+    const PAD = 24;
+    const frames = new Set<string>();
+    for (const id of [...changed]) { const f = this.scene.get(id)?.frame; if (f) frames.add(f); }
+    for (const fid of frames) {
+      const fr = this.scene.get(fid);
+      if (!fr || fr.type !== 'frame') continue;
+      const ms = this.scene.all().filter((e) => e.frame === fid);
+      if (!ms.length) continue;
+      const maxX = Math.max(...ms.map((e) => e.x + e.w)) + PAD, maxY = Math.max(...ms.map((e) => e.y + e.h)) + PAD;
+      if (maxX > fr.x + fr.w || maxY > fr.y + fr.h) {
+        this.scene.set({ ...fr, w: Math.max(fr.w, maxX - fr.x), h: Math.max(fr.h, maxY - fr.y) });
+        changed.add(fid);
+      }
+    }
   }
 
   private blockSize(text: string, size: number): { w: number; h: number } {
@@ -517,7 +578,7 @@ class EditorImpl implements Editor {
     if (key === this.lastSelKey) return;
     this.lastSelKey = key;
     this.host.onSelectionChange({ elementIds: ids, stageKey });
-    this.invalidate(false, true);
+    this.invalidate(); // arrows of the selected card's chain are highlighted in the static layer
   }
 
   // ---- arrows / binding --------------------------------------------------------------------
@@ -611,7 +672,8 @@ class EditorImpl implements Editor {
   private edgeAt(p: Point): DepEdge | null {
     const { edges, cards } = this.edges();
     let best: DepEdge | null = null, bd = this.tol() + 2;
-    for (const ed of edges) {
+    void edges;
+    for (const ed of this.edgeViewNow().visible) {
       const a = cards.get(ed.from), b = cards.get(ed.to);
       if (!a || !b) continue;
       const d = distToBezier(p, edgeCurve(a, b, isMilestone(this.stages.get(ed.from)), isMilestone(this.stages.get(ed.to))));
@@ -850,6 +912,13 @@ class EditorImpl implements Editor {
     switch (g.kind) {
       case 'pan': if (g.right) this.rightMoved = g.dist > 4; break;
       case 'move':
+        if (g.moved && this.autoLayout) {
+          // a card placed by hand stays put when the board re-arranges itself
+          for (const id of g.orig.keys()) {
+            const el = this.scene.get(id);
+            if (el?.type === 'card' && !(el as CardElement).pinned) this.put({ ...el, pinned: true } as CardElement);
+          }
+        }
         if (g.moved) this.end();
         else if (!g.shift && this.selected.size > 1) { const h = this.scene.get(g.hitId); this.selected = new Set(h ? this.pickIds(h) : [g.hitId]); this.emitSelection(); }
         break;
@@ -897,6 +966,9 @@ class EditorImpl implements Editor {
       }
     }
     if (cur !== this.hoverCursor) { this.hoverCursor = cur; this.updateCursor(); }
+    const over = this.tool === 'select' || this.tool === 'hand' ? this.hitAt(w) : null;
+    const key = over?.type === 'card' ? (over as CardElement).ref : null;
+    if (key !== this.hoverKey) { this.hoverKey = key; this.invalidate(); }
   }
 
   private updateCursor(grabbing = false) {
@@ -1611,7 +1683,13 @@ class EditorImpl implements Editor {
       ];
       return [...(grp.length ? [...grp, sep] : []), ...(aln.length ? [...aln, sep] : []), ...z, sep, lock, del];
     }
-    if (one.type === 'card') return [...open, sep, ...z, sep, lock, del];
+    if (one.type === 'card') {
+      const card = one as CardElement;
+      const pin: MenuItem[] = this.autoLayout
+        ? [{ label: card.pinned ? L.ctxUnpin : L.ctxPin, run: () => this.act(() => this.put({ ...card, pinned: card.pinned ? undefined : true })) }]
+        : [];
+      return [...open, ...pin, sep, ...z, sep, lock, del];
+    }
     if (one.type === 'frame') return [{ label: L.ctxRename, run: () => this.startFrameRename(one.id) }, sep, ...z, sep, lock, del];
     const dup: MenuItem = { label: L.ctxDuplicate, run: () => this.duplicate() };
     if (one.type === 'rect' || one.type === 'ellipse' || one.type === 'diamond') {
@@ -1733,6 +1811,7 @@ class EditorImpl implements Editor {
     return {
       cam: this.cam, width: this.width, height: this.height, dpr: window.devicePixelRatio || this.dpr, theme: this.theme, style: this.style,
       scene: this.scene, stages: this.stages, layoutOf: this.layoutFor, edges: this.edges().edges, cards: this.edges().cards, selected: this.selected,
+      view: this.edgeViewNow(), autoLayout: this.autoLayout,
       selEdge: this.selEdge, editingId: this.editingId, labels: this.labels, agents: this.agents,
       exec: this.exec, frameStats: this.frameInfo().stats, images: this.images,
     };

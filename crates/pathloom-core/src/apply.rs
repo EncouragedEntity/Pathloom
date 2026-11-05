@@ -7,7 +7,7 @@ use crate::fsutil::{now_minute, write_atomic};
 use crate::hash::hash_bytes;
 use crate::indexkey::{key_after, key_between};
 use crate::keygen::generate_key;
-use crate::layout::{CARD_H, CARD_W, El, card_height, card_ref, el_id, el_type, fit_frame, layout_elements, num};
+use crate::layout::{CARD_H, CARD_W, El, card_height, card_rect, card_ref, el_id, el_type, fit_frame, layout_elements, layout_full, num};
 use crate::model::*;
 use crate::project::{Project, check_board_name, check_key, mark_done, push_task, read_text};
 use crate::status::find_cycle;
@@ -78,6 +78,9 @@ pub struct StageSpec {
     /// Required for a new stage.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub title: Option<String>,
+    /// What the stage is for, in a sentence or two (shown in the app's side panel). Replaces the old text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub kind: Option<StageKind>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -328,6 +331,9 @@ impl Project {
             if let Some(k) = ss.kind {
                 st.kind = k;
             }
+            if let Some(d) = &ss.description {
+                st.description = d.trim().replace("\r\n", "\n");
+            }
             if let Some(w) = &ss.who {
                 st.who = w.clone();
             }
@@ -458,15 +464,27 @@ impl Project {
         }
 
         // 6. board: cards, placement, frames
-        let wants_board = spec.board.is_some()
+        let bpath = self.board_path(&bname);
+        let orig_board = if bpath.is_file() { Some(Board::from_json(&bpath, &read_text(&bpath)?)?) } else { None };
+        // An auto-layout board is re-arranged after any change to stages or links.
+        let auto = orig_board.as_ref().is_some_and(|b| b.auto_layout) && !touched.is_empty();
+        let wants_board = auto
+            || spec.board.is_some()
             || !report.created.is_empty()
             || !spec.frames.is_empty()
             || spec.stages.iter().any(|s| s.place.is_some());
         if wants_board {
-            let bpath = self.board_path(&bname);
-            let orig_board = if bpath.is_file() { Some(Board::from_json(&bpath, &read_text(&bpath)?)?) } else { None };
             let mut board = orig_board.clone().unwrap_or_else(|| Board::new(&title_case(&bname)));
             self.plan_board(spec, &resolved, &stages, &idx, &mut board, &mut report)?;
+            if board.auto_layout {
+                layout_full(&mut board.elements, &stages)?;
+                for c in &mut report.cards_added {
+                    if let Some(e) = board.elements.iter().find(|e| card_ref(e) == Some(c.key.as_str())) {
+                        let r = card_rect(e);
+                        (c.x, c.y) = (r.x, r.y);
+                    }
+                }
+            }
             if orig_board.as_ref() != Some(&board) {
                 files.push((bpath, board.to_canonical_json()));
             }
