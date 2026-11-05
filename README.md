@@ -6,7 +6,7 @@
 
 **A local whiteboard and roadmap for projects you build with AI agents.**
 
-Draw freely, plan with stage cards and dependencies, and let Claude Code (or any MCP client) build and update the plan while you watch it change live.
+Draw freely, plan with stage cards and dependencies, and let your AI agent (Claude Code, Codex, Cursor, Gemini CLI or any MCP client) build and update the plan while you watch it change live.
 
 [![CI](https://github.com/XxArDy/Pathloom/actions/workflows/ci.yml/badge.svg)](https://github.com/XxArDy/Pathloom/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/XxArDy/Pathloom?include_prereleases&label=release)](https://github.com/XxArDy/Pathloom/releases)
@@ -66,7 +66,16 @@ To update, run the new installer over the old one. On Windows prefer the `.exe`:
 
 The `pathloom` command-line tool is installed next to the app. **Settings → AI agents** shows its path and ready-to-copy commands.
 
-## Use it with Claude Code
+## Connect your AI agent
+
+Pathloom works with **Claude Code, Codex, Gemini CLI, Cursor, VS Code Copilot, Claude Desktop** and any other agent that supports MCP. Several agents can share one plan.
+
+Every agent starts the same [MCP](https://modelcontextprotocol.io) server: `pathloom mcp`, run inside your project folder.
+
+`pathloom` is installed next to the app and is not on your `PATH`. Use the full path from **Settings → AI agents**, for example
+`C:\Users\you\AppData\Local\Pathloom\pathloom.exe` on Windows. In the snippets below, replace `pathloom` with that path.
+
+### Claude Code
 
 Give Claude Code the Pathloom tools once:
 
@@ -89,38 +98,7 @@ Then just ask, inside your project:
 
 > Mark the login tasks as done and leave a note about what changed.
 
-Using Codex, Gemini CLI, Cursor or Copilot? See [Use it with other AI agents](#use-it-with-other-ai-agents).
-
-### What the agent can do
-
-| Tool | |
-|---|---|
-| `project_info`, `list_stages`, `get_stage`, `search` | Read the plan without dumping whole boards. |
-| `next` | Tasks that can be done right now, by priority and due date. |
-| `apply` | Create or update many stages, tasks, dependencies, frames and comments in one transactional call. |
-| `set_task`, `add_comment` | Track progress and leave notes for you. |
-| `claim_task`, `release_task` | Take a task so other agents don't work on the same thing (expires after 30 min unless renewed). |
-| `activity` | What other agents and you did recently. |
-| `heartbeat` | "Still working" during long steps; after 10 silent minutes the card shows the agent as possibly stuck. |
-| `set_gate`, `report_usage` | Report a gate's check result; optionally report tokens and cost. |
-| `import_tasks` | Turn a GitHub Spec Kit `tasks.md` into stages, tasks and dependencies. |
-| `layout_board`, `validate` | Tidy the board, check the plan for problems. |
-
-**Keeping the board readable.** Turn on *Auto-arrange* (bottom bar) and the board re-arranges itself whenever an agent changes the plan; the wand button arranges it once. Hover or select a card to light up what it waits for and what waits for it. In Settings you can switch off hiding implied arrows and grouping arrows between phases. Agents get rules for readable plans (phases in time order, a one-line description per stage, 3-8 tasks, only direct dependencies), and `validate` lists `hints` when a plan breaks them.
-
-**Done means proven.** An agent closes a task with the check it ran (`set_task` with `evidence`, or `pathloom task done AUTH-02 --run "cargo test"`): the task shows as verified, and a failing check never closes it. Turn on *Agents must prove a task is done* in Settings to require it. **Gate** stages (`kind: gate`, `check: npm test`) are done only when their check passes. Stages can list hand-off files (spec, plan) as **artifacts**, and Overview shows the **spending** agents report.
-
-**Several agents at once.** Stages can be assigned to a named agent (`who: ai:claude`, `ai:codex`) or person (`human:olia`) — each gets its own colour. An agent claims a task before working on it; the card shows who is on it, and other agents skip it. **Overview** shows who is working right now and a feed of agent activity (`.pathloom/log/agent.jsonl`).
-
-Prefer to approve changes first? Switch **Settings → AI agents → Ask me first**. Agent changes then arrive as proposals you accept or reject.
-
-## Use it with other AI agents
-
-Pathloom speaks [MCP](https://modelcontextprotocol.io), so any agent that supports MCP servers can use it. The server is the
-same command everywhere: `pathloom mcp`, started inside your project folder.
-
-`pathloom` is installed next to the app and is not on your `PATH`. Use the full path from **Settings → AI agents**, for example
-`C:\Users\you\AppData\Local\Pathloom\pathloom.exe` on Windows. In the snippets below, replace `pathloom` with that path.
+### Codex, Gemini CLI, Cursor, Copilot and others
 
 **Codex CLI**
 
@@ -167,6 +145,29 @@ It writes `.agents/skills/pathloom/SKILL.md` (the open Agent Skills format that 
 You can also point the agent at it in `AGENTS.md`: *"Plan and track work with the Pathloom MCP tools; see .agents/skills/pathloom/SKILL.md."*
 
 Several agents can work on one plan at once: each one claims a task before starting, and the board shows who is on what.
+
+### What the agent can do
+
+| Tool | |
+|---|---|
+| `project_info`, `list_stages`, `get_stage`, `search` | Read the plan without dumping whole boards. |
+| `next` | Tasks that can be done right now, by priority and due date. |
+| `apply` | Create or update many stages, tasks, dependencies, frames and comments in one transactional call. |
+| `set_task`, `add_comment` | Track progress and leave notes for you. |
+| `claim_task`, `release_task` | Take a task so other agents don't work on the same thing (expires after 30 min unless renewed). |
+| `activity` | What other agents and you did recently. |
+| `heartbeat` | "Still working" during long steps; after 10 silent minutes the card shows the agent as possibly stuck. |
+| `set_gate`, `report_usage` | Report a gate's check result; optionally report tokens and cost. |
+| `import_tasks` | Turn a GitHub Spec Kit `tasks.md` into stages, tasks and dependencies. |
+| `layout_board`, `validate` | Tidy the board, check the plan for problems. |
+
+**Keeping the board readable.** Turn on *Auto-arrange* (bottom bar) and the board re-arranges itself whenever an agent changes the plan; the wand button arranges it once. Hover or select a card to light up what it waits for and what waits for it. In Settings you can switch off hiding implied arrows and grouping arrows between phases. Agents get rules for readable plans (phases in time order, a one-line description per stage, 3-8 tasks, only direct dependencies), and `validate` lists `hints` when a plan breaks them.
+
+**Done means proven.** An agent closes a task with the check it ran (`set_task` with `evidence`, or `pathloom task done AUTH-02 --run "cargo test"`): the task shows as verified, and a failing check never closes it. Turn on *Agents must prove a task is done* in Settings to require it. **Gate** stages (`kind: gate`, `check: npm test`) are done only when their check passes. Stages can list hand-off files (spec, plan) as **artifacts**, and Overview shows the **spending** agents report.
+
+**Several agents at once.** Stages can be assigned to a named agent (`who: ai:claude`, `ai:codex`) or person (`human:olia`) — each gets its own colour. An agent claims a task before working on it; the card shows who is on it, and other agents skip it. **Overview** shows who is working right now and a feed of agent activity (`.pathloom/log/agent.jsonl`).
+
+Prefer to approve changes first? Switch **Settings → AI agents → Ask me first**. Agent changes then arrive as proposals you accept or reject.
 
 ## The files
 
