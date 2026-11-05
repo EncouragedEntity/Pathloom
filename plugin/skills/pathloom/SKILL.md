@@ -25,6 +25,7 @@ The desktop app watches these files and shows every change live, highlighted, wi
 ## Workflow
 
 1. Start with `project_info` (or `pathloom info --json`). It returns `protocol` (`pathloom/1`), `capabilities`, registered `agents` and the stages. Reuse keys; never delete or rewrite stages you did not create unless the user asks.
+   - `NOT_FOUND ... call init_project` means the folder has no plan yet: if the user wants one, call `init_project {name?}` (or `pathloom init`), then plan with `apply`. The user opens the folder in the Pathloom app to see the board.
    - Once per session, `register_agent {name, color, avatar}` so the board shows you with your own name and colour (`avatar`: one emoji, or an image path `assets/...` inside the plan).
    - Read `activity` to see what other agents and the user did recently.
 2. To plan, call `apply` once with the whole structure instead of many small calls:

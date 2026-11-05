@@ -122,6 +122,14 @@ struct SetTaskParams {
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
+struct InitParams {
+    /// Project name (default: folder name)
+    name: Option<String>,
+    /// Also write .agents/skills/pathloom/SKILL.md for other agents (Codex, Gemini CLI, Cursor)
+    agents_skill: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
 struct HeartbeatParams {
     /// Only this claimed task (default: all your claims)
     task_id: Option<String>,
@@ -213,7 +221,12 @@ fn finish(r: ApiResult<Value>) -> CallToolResult {
 
 impl PathloomServer {
     fn project(&self) -> ApiResult<Project> {
-        ops::open_project(&self.root)
+        ops::open_project(&self.root).map_err(|mut e| {
+            if e.code == "NOT_FOUND" {
+                e.message = format!("{} in {}: call init_project to create one here", e.message, self.root.display());
+            }
+            e
+        })
     }
 
     fn guard(&self) -> ApiResult<()> {
@@ -243,6 +256,25 @@ impl PathloomServer {
 
 #[tool_router]
 impl PathloomServer {
+    #[tool(
+        description = "Create a Pathloom project (.pathloom/ and plan/) in the folder this server runs in. Only when project_info says there is none and the user wants a plan here."
+    )]
+    async fn init_project(&self, Parameters(a): Parameters<InitParams>) -> CallToolResult {
+        finish((|| {
+            self.guard()?;
+            let name = a.name.filter(|n| !n.trim().is_empty()).unwrap_or_else(|| {
+                self.root.file_name().map_or_else(|| "project".into(), |n| n.to_string_lossy().into_owned())
+            });
+            let p = Project::init(&self.root, name.trim())?;
+            let mut v = json!({"name": name.trim(), "root": p.root.to_string_lossy(), "plan_dir": p.config.plan_dir});
+            if a.agents_skill.unwrap_or(false) {
+                let path = ops::install_skill(&p.root, std::path::Path::new(".agents/skills"), false)?;
+                v["skill"] = json!(path.to_string_lossy());
+            }
+            Ok(v)
+        })())
+    }
+
     #[tool(
         description = "Project summary: boards, stage counts per status, top 5 next tasks, review mode. Call this first.",
         annotations(read_only_hint = true)

@@ -541,8 +541,19 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
             emit(cli, &json!({"path": path.to_string_lossy()}), || format!("Wrote {}", path.display()));
         }
         Cmd::Mcp { read_only } => {
-            let root = ops::locate_root(cli.project.as_deref())?;
-            ops::open_project(&root)?;
+            // Start even without a project (e.g. a user-wide MCP config in a fresh folder): tools report
+            // NOT_FOUND until `init_project` creates one in this folder.
+            let root = match ops::locate_root(cli.project.as_deref()) {
+                Ok(r) => r,
+                Err(_) => match cli.project.as_deref() {
+                    Some(p) => std::path::absolute(p),
+                    None => std::env::current_dir(),
+                }
+                .map_err(|e| ApiError::new("IO_ERROR", e.to_string()))?,
+            };
+            if root.join(".pathloom/project.toml").is_file() {
+                ops::open_project(&root)?;
+            }
             let author = (cli.author != "agent").then(|| cli.author.clone());
             mcp::run(root, *read_only, author).map_err(|e| ApiError::new("IO_ERROR", e))?;
         }
