@@ -89,7 +89,7 @@ claude mcp add pathloom -- pathloom mcp
 
 > Познач задачі логіну виконаними й залиш нотатку, що змінилося.
 
-Інші MCP-клієнти (Cursor тощо) підключаються до того самого сервера: `{"command": "pathloom", "args": ["mcp"]}`.
+Працюєш із Codex, Gemini CLI, Cursor чи Copilot? Дивись [Інші AI-агенти](#інші-ai-агенти).
 
 ### Що вміє агент
 
@@ -113,6 +113,60 @@ claude mcp add pathloom -- pathloom mcp
 **Кілька агентів одночасно.** Етап можна призначити конкретному агенту (`who: ai:claude`, `ai:codex`) або людині (`human:olia`) — у кожного свій колір. Агент «бере» задачу перед роботою; на картці видно, хто нею зайнятий, а інші агенти її пропускають. В **«Огляді»** видно, хто працює зараз, і стрічку дій агентів (`.pathloom/log/agent.jsonl`).
 
 Хочеш спершу переглядати зміни? Увімкни **Налаштування → AI-агенти → Спершу питати мене**. Тоді зміни агента приходять як пропозиції, які ти приймаєш або відхиляєш.
+
+## Інші AI-агенти
+
+Pathloom працює через [MCP](https://modelcontextprotocol.io), тож його може використовувати будь-який агент із підтримкою
+MCP-серверів. Сервер скрізь той самий: `pathloom mcp`, запущений у папці проєкту.
+
+`pathloom` встановлюється поруч із застосунком і не додається в `PATH`. Візьми повний шлях із **Налаштування → AI-агенти**,
+наприклад `C:\Users\ти\AppData\Local\Pathloom\pathloom.exe` у Windows, і підстав його замість `pathloom` у прикладах нижче.
+
+**Codex CLI**
+
+```bash
+codex mcp add pathloom -- pathloom mcp
+```
+
+або в `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.pathloom]
+command = "pathloom"
+args = ["mcp"]
+```
+
+**Gemini CLI** (`~/.gemini/settings.json` або `.gemini/settings.json` у проєкті)
+
+```json
+{ "mcpServers": { "pathloom": { "command": "pathloom", "args": ["mcp"] } } }
+```
+
+**Cursor** (`.cursor/mcp.json` у проєкті або `~/.cursor/mcp.json`)
+
+```json
+{ "mcpServers": { "pathloom": { "command": "pathloom", "args": ["mcp"] } } }
+```
+
+**VS Code з GitHub Copilot** (режим агента, `.vscode/mcp.json` у проєкті)
+
+```json
+{ "servers": { "pathloom": { "type": "stdio", "command": "pathloom", "args": ["mcp"] } } }
+```
+
+**Claude Desktop** (Settings → Developer → Edit Config): той самий блок `mcpServers`, що й для Cursor. Claude Desktop запускає
+сервер не в папці проєкту, тож додай шлях: `"args": ["--project", "D:/code/my-app", "mcp"]`.
+
+**Навчи агента працювати з планом.** Claude Code отримує це з плагіна. Для інших агентів один раз виконай у проєкті:
+
+```bash
+pathloom skill install
+```
+
+Команда створює `.agents/skills/pathloom/SKILL.md` (відкритий формат Agent Skills, його читають Codex, Gemini CLI, Cursor, Copilot
+та інші). Можна також додати в `AGENTS.md`: *«Плануй і веди роботу через MCP-інструменти Pathloom; див. .agents/skills/pathloom/SKILL.md.»*
+
+Над одним планом можуть працювати кілька агентів одночасно: кожен бере задачу перед роботою, а дошка показує, хто чим зайнятий.
 
 ## Файли
 

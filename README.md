@@ -89,7 +89,7 @@ Then just ask, inside your project:
 
 > Mark the login tasks as done and leave a note about what changed.
 
-Other MCP clients (Cursor, etc.) use the same server: `{"command": "pathloom", "args": ["mcp"]}`.
+Using Codex, Gemini CLI, Cursor or Copilot? See [Use it with other AI agents](#use-it-with-other-ai-agents).
 
 ### What the agent can do
 
@@ -113,6 +113,60 @@ Other MCP clients (Cursor, etc.) use the same server: `{"command": "pathloom", "
 **Several agents at once.** Stages can be assigned to a named agent (`who: ai:claude`, `ai:codex`) or person (`human:olia`) — each gets its own colour. An agent claims a task before working on it; the card shows who is on it, and other agents skip it. **Overview** shows who is working right now and a feed of agent activity (`.pathloom/log/agent.jsonl`).
 
 Prefer to approve changes first? Switch **Settings → AI agents → Ask me first**. Agent changes then arrive as proposals you accept or reject.
+
+## Use it with other AI agents
+
+Pathloom speaks [MCP](https://modelcontextprotocol.io), so any agent that supports MCP servers can use it. The server is the
+same command everywhere: `pathloom mcp`, started inside your project folder.
+
+`pathloom` is installed next to the app and is not on your `PATH`. Use the full path from **Settings → AI agents**, for example
+`C:\Users\you\AppData\Local\Pathloom\pathloom.exe` on Windows. In the snippets below, replace `pathloom` with that path.
+
+**Codex CLI**
+
+```bash
+codex mcp add pathloom -- pathloom mcp
+```
+
+or in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.pathloom]
+command = "pathloom"
+args = ["mcp"]
+```
+
+**Gemini CLI** (`~/.gemini/settings.json` or `.gemini/settings.json` in the project)
+
+```json
+{ "mcpServers": { "pathloom": { "command": "pathloom", "args": ["mcp"] } } }
+```
+
+**Cursor** (`.cursor/mcp.json` in the project, or `~/.cursor/mcp.json`)
+
+```json
+{ "mcpServers": { "pathloom": { "command": "pathloom", "args": ["mcp"] } } }
+```
+
+**VS Code with GitHub Copilot** (agent mode, `.vscode/mcp.json` in the project)
+
+```json
+{ "servers": { "pathloom": { "type": "stdio", "command": "pathloom", "args": ["mcp"] } } }
+```
+
+**Claude Desktop** (Settings → Developer → Edit Config): the same `mcpServers` block as for Cursor. Claude Desktop does not start
+the server in your project folder, so add the project path: `"args": ["--project", "D:/code/my-app", "mcp"]`.
+
+**Teach the agent the workflow.** Claude Code gets it from the plugin. For other agents, run this once in your project:
+
+```bash
+pathloom skill install
+```
+
+It writes `.agents/skills/pathloom/SKILL.md` (the open Agent Skills format that Codex, Gemini CLI, Cursor, Copilot and others read).
+You can also point the agent at it in `AGENTS.md`: *"Plan and track work with the Pathloom MCP tools; see .agents/skills/pathloom/SKILL.md."*
+
+Several agents can work on one plan at once: each one claims a task before starting, and the board shows who is on what.
 
 ## The files
 
