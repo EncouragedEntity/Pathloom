@@ -5,9 +5,8 @@ import {
 } from '@tabler/icons-react';
 import { api, errorText, type RecentProject } from '../api';
 import { useApp } from '../store';
-import { setLanguage } from '../i18n';
 import { createProject, openProject, reopenLastEnabled, setReopenLast } from '../projectActions';
-import { findTheme, nextTheme } from '../theme';
+import { findTheme } from '../theme';
 import { effectiveKeymap, label, useKeys } from '../keys';
 import { AppMark } from './AppMark';
 
@@ -75,10 +74,10 @@ export function ProjectMenu() {
           <button role="menuitemcheckbox" aria-checked={reopen} onClick={() => { setReopenLast(!reopen); setReopen(!reopen); }}>
             <span className="pm-check">{reopen && <IconCheck size={13} />}</span>{t('menu.reopenLast')}
           </button>
-          <button role="menuitem" onClick={() => setLanguage(i18n.language === 'uk' ? 'en' : 'uk')}>
+          <button role="menuitem" onClick={() => { setOpen(false); set({ picker: 'language' }); }}>
             <IconLanguage size={15} />{t('sidebar.language')}<span className="pm-val">{i18n.language === 'uk' ? 'Українська' : 'English'}</span>
           </button>
-          <button role="menuitem" onClick={() => set({ theme: nextTheme(theme, customThemes) })}>
+          <button role="menuitem" onClick={() => { setOpen(false); set({ picker: 'theme' }); }}>
             <IconPalette size={15} />{t('sidebar.theme')}<span className="pm-val">{findTheme(theme, customThemes).name}</span>
           </button>
           <button role="menuitem" onClick={() => { setOpen(false); set({ settingsTab: 'general' }); }}><IconSettings size={15} />{t('menu.allSettings')}<kbd>{label('app.settings', keys)}</kbd></button>

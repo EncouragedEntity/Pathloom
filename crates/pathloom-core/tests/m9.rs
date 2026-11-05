@@ -95,3 +95,27 @@ fn hints_and_description() {
     assert!(codes.iter().any(|(c, m)| c == "NO_DESCRIPTION" && m.starts_with("B ")));
     assert!(!codes.iter().any(|(c, m)| c == "NO_DESCRIPTION" && (m.starts_with("A ") || m.starts_with("C "))), "A has one, C has no tasks");
 }
+
+#[test]
+fn task_notes_and_files() {
+    let (d, p) = setup();
+    apply(&p, "stages: [{id: A, title: A, tasks: [one, two]}]");
+    p.set_task_note("A-01", "Use PKCE.\nSee RFC 7636.").unwrap();
+    p.add_task_file("A-01", "docs/auth.md").unwrap();
+    p.add_task_file("A-01", r"docs\auth.md").unwrap(); // same file, no duplicate
+    let s = p.load_stage("A").unwrap();
+    assert_eq!(s.task_info["A-01"].note, "Use PKCE.\nSee RFC 7636.");
+    assert_eq!(s.task_info["A-01"].files, ["docs/auth.md"]);
+    assert!(p.add_task_file("A-01", "../x").is_err());
+    assert!(p.set_task_note("A-09", "x").is_err());
+    // apply sets notes and files too
+    apply(&p, "stages: [{id: A, task_notes: {A-02: Second}, task_files_add: {A-02: ['https://x.dev/spec']}}]");
+    let s = p.load_stage("A").unwrap();
+    assert_eq!((s.task_info["A-02"].note.as_str(), s.task_info["A-02"].files.len()), ("Second", 1));
+    // clearing removes the entry; removing a task drops its details
+    p.set_task_note("A-02", "").unwrap();
+    p.remove_task_file("A-02", "https://x.dev/spec").unwrap();
+    p.remove_task("A-01").unwrap();
+    let src = std::fs::read_to_string(d.path().join("plan/stages/A.md")).unwrap();
+    assert!(!src.contains("task_info"), "{src}");
+}

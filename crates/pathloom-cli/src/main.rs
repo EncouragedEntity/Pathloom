@@ -180,6 +180,14 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
             let v = ops::log_submit(&p, &actor, "stage add", &spec, v);
             emit(cli, &v, || fmt_submit(&v));
         }
+        Cmd::Stage(StageCmd::RenameKey { key, new_key }) => {
+            let p = open(cli)?;
+            let s = p.rename_stage_key(key, new_key)?;
+            let file = format!("{}/stages/{}.md", p.config.plan_dir.trim_end_matches('/'), s.key);
+            let e = ops::entry("rename_key", format!("{key} renamed to {new_key}"), vec![s.key.clone()], vec![], vec![file]);
+            let v = ops::log(&p, &actor, e, json!({"from": key, "to": s.key}));
+            emit(cli, &v, || format!("Renamed {key} to {new_key}"));
+        }
         Cmd::Stage(StageCmd::Show { key }) => {
             let v = ops::get_stage(&open(cli)?, key)?;
             emit(cli, &v, || {

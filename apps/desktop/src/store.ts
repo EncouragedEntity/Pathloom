@@ -15,6 +15,10 @@ interface AppStore {
   activeBoard: string | null;
   board: Board | null;
   selectedStage: string | null;
+  /** Task opened in the side panel (inside `selectedStage`). */
+  selectedTask: string | null;
+  /** Side panel width in px (persisted). */
+  inspWidth: number;
   tool: Tool;
   zoom: number;
   save: SaveState;
@@ -25,6 +29,8 @@ interface AppStore {
   error: string | null;
   view: 'board' | 'list' | 'overview';
   paletteOpen: boolean;
+  /** VS Code style list picker for the theme or the UI language. */
+  picker: 'theme' | 'language' | null;
   snap: boolean;
   minimap: boolean;
   /** Dependency arrows: hide A→C when A→B→C, bundle arrows between frames (persisted). */
@@ -95,6 +101,8 @@ export const useApp = create<AppStore>((set, get) => ({
   activeBoard: null,
   board: null,
   selectedStage: null,
+  selectedTask: null,
+  inspWidth: Number(localStorage.getItem('pathloom.inspWidth')) || 380,
   tool: 'select',
   zoom: 1,
   save: { kind: 'saved' },
@@ -104,6 +112,7 @@ export const useApp = create<AppStore>((set, get) => ({
   error: null,
   view: 'board',
   paletteOpen: false,
+  picker: null,
   snap: false,
   minimap: false,
   edgeHideRedundant: localStorage.getItem('pathloom.edgeHideRedundant') !== '0',
@@ -206,4 +215,12 @@ useApp.subscribe((st, prev) => {
     if (st.edgeHideRedundant !== prev.edgeHideRedundant) localStorage.setItem('pathloom.edgeHideRedundant', st.edgeHideRedundant ? '1' : '0');
     if (st.edgeBundle !== prev.edgeBundle) localStorage.setItem('pathloom.edgeBundle', st.edgeBundle ? '1' : '0');
   } catch { /* storage unavailable: keep the in-memory value */ }
+});
+
+// Persist the side panel width; a new stage opens on its details, not on a task of the previous one.
+useApp.subscribe((st, prev) => {
+  try { if (st.inspWidth !== prev.inspWidth) localStorage.setItem('pathloom.inspWidth', String(Math.round(st.inspWidth))); } catch { /* ignore */ }
+  if (st.selectedStage !== prev.selectedStage && st.selectedTask && !st.selectedTask.startsWith(`${st.selectedStage}-`)) {
+    useApp.setState({ selectedTask: null });
+  }
 });

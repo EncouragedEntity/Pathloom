@@ -114,6 +114,12 @@ pub struct StageSpec {
     #[serde(deserialize_with = "lenient_vec", skip_serializing_if = "Vec::is_empty")]
     #[schemars(with = "Vec<String>")]
     pub artifacts_add: Vec<String>,
+    /// Notes per task id of this stage (`{AUTH-02: "Use PKCE"}`); replaces the note, empty clears.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub task_notes: BTreeMap<String, String>,
+    /// Files to attach per task id (`{AUTH-02: [docs/auth.md]}`): project-relative paths or http(s) links.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub task_files_add: BTreeMap<String, Vec<String>>,
     /// `kind: gate` only: command that must pass, e.g. `npm test`. Empty string clears.
     #[serde(deserialize_with = "lenient_opt", skip_serializing_if = "Option::is_none")]
     #[schemars(with = "Option<String>")]
@@ -387,6 +393,32 @@ impl Project {
                     st.artifacts.push(a);
                 }
             }
+            for (id, note) in &ss.task_notes {
+                if !st.task_ids().contains(id.as_str()) {
+                    return Err(Error::NotFound(format!("task {id}")));
+                }
+                let note = note.replace("\r\n", "\n").trim().to_string();
+                if note.chars().count() > 4000 {
+                    return Err(bad(format!("note of {id} must be at most 4000 characters")));
+                }
+                st.task_info.entry(id.clone()).or_default().note = note;
+            }
+            for (id, files) in &ss.task_files_add {
+                if !st.task_ids().contains(id.as_str()) {
+                    return Err(Error::NotFound(format!("task {id}")));
+                }
+                let info = st.task_info.entry(id.clone()).or_default();
+                for f in files {
+                    let f = crate::project::check_artifact(f)?;
+                    if !info.files.contains(&f) {
+                        if info.files.len() >= 20 {
+                            return Err(bad(format!("task {id} has 20 files already")));
+                        }
+                        info.files.push(f);
+                    }
+                }
+            }
+            st.task_info.retain(|_, i| !i.is_empty());
             if let Some(c) = &ss.check {
                 st.check = opt_clear(&c.replace(['\r', '\n'], " "));
             }

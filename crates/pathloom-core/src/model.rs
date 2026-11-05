@@ -132,6 +132,11 @@ impl schemars::JsonSchema for Who {
 }
 
 impl Stage {
+    /// Ids of all tasks and subtasks.
+    pub fn task_ids(&self) -> std::collections::HashSet<&str> {
+        self.tasks.iter().flat_map(|t| std::iter::once(t).chain(t.sub.iter())).map(|t| t.id.as_str()).collect()
+    }
+
     /// Ids of the done tasks and subtasks.
     pub fn done_task_ids(&self) -> std::collections::HashSet<&str> {
         self.tasks
@@ -174,6 +179,7 @@ impl Stage {
             evidence: std::collections::BTreeMap::new(),
             artifacts: vec![],
             check: None,
+            task_info: std::collections::BTreeMap::new(),
             extra: Map::new(),
             layout: Layout::default(),
         }
@@ -184,6 +190,23 @@ impl Stage {
 pub struct Dep {
     pub id: String,
     pub soft: bool,
+}
+
+/// Extra details of one task, kept in the stage frontmatter (`task_info`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+pub struct TaskInfo {
+    /// Free text (several lines allowed), up to 4000 characters.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub note: String,
+    /// Attached files: project-relative paths or http(s) links, up to 20.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<String>,
+}
+
+impl TaskInfo {
+    pub fn is_empty(&self) -> bool {
+        self.note.trim().is_empty() && self.files.is_empty()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
@@ -252,6 +275,9 @@ pub struct Stage {
     /// `kind: gate`: the command that must pass (exit code 0) for the gate to be done, e.g. `npm test`.
     #[serde(default)]
     pub check: Option<String>,
+    /// Per task id: a free note and attached files (project-relative paths or links).
+    #[serde(default)]
+    pub task_info: std::collections::BTreeMap<String, TaskInfo>,
     /// Unknown frontmatter keys (not exposed to the UI).
     #[serde(skip)]
     pub(crate) extra: Map<String, Value>,

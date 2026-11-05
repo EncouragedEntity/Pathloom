@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ask } from '@tauri-apps/plugin-dialog';
+import { ask, open as openFile } from '@tauri-apps/plugin-dialog';
 import {
   IconX, IconCheck, IconPlus, IconCalendar, IconFlag, IconUser, IconGitBranch, IconTrash,
   IconFileText, IconListDetails, IconDiamond, IconCornerDownRight, IconCopy, IconExternalLink, IconShieldCheck, IconAlertTriangle,
+  IconArrowLeft, IconPaperclip, IconLink, IconChevronRight,
 } from '@tabler/icons-react';
 import type { StageView, Task } from '@pathloom/canvas';
 import { api, errorText, type StageMeta } from '../api';
 import i18n from '../i18n';
 import { editorRef, useApp } from '../store';
 import { StatusIcon, focusStage } from './Sidebar';
-import { agentText, ago, claimOf, knownWhos, whoColor, whoText } from '../agents';
+import { agentText, ago, claimOf, knownWhos, whoColor, whoText, type LogEntry } from '../agents';
 import type { Evidence } from '@pathloom/canvas';
 import { findTheme } from '../theme';
 
@@ -82,7 +83,7 @@ function InlineText({ value, onCommit, className }: { value: string; onCommit: (
 function TaskRow({ task, sub, stage }: { task: Task; sub?: boolean; stage: StageView }) {
   const { t } = useTranslation();
   const call = useStageCall();
-  const { theme, customThemes, agents } = useApp();
+  const { theme, customThemes, agents, set } = useApp();
   const claim = claimOf(stage, task.id);
   const claimColor = claim ? whoColor(`ai:${claim.agent}`, findTheme(theme, customThemes).tokens, agents) : null;
   const [adding, setAdding] = useState(false);
@@ -93,7 +94,10 @@ function TaskRow({ task, sub, stage }: { task: Task; sub?: boolean; stage: Stage
       <li className={`trow ${done ? 'done' : ''} ${sub ? 'sub' : ''}`}>
         <button className="chk" aria-label={task.id} aria-pressed={done} onClick={() => call(api.taskToggle(task.id))}><IconCheck size={11} /></button>
         <span className="tid">{task.id}</span>
-        <InlineText className="tt" value={task.title} onCommit={(v) => call(api.taskRename(task.id, v))} />
+        <button className="tt tt-open" title={t('task.open')} onClick={() => set({ selectedTask: task.id })}>
+          {task.title}
+          {(stage.taskInfo?.[task.id]?.files?.length ?? 0) > 0 && <IconPaperclip size={11} className="muted tt-clip" />}
+        </button>
         {done && ev && (
           <span className="verified" title={evidenceText(ev, t, (x) => agentText(x, agents))} aria-label={t('evidence.verified')}><IconShieldCheck size={13} /></span>
         )}
@@ -110,6 +114,7 @@ function TaskRow({ task, sub, stage }: { task: Task; sub?: boolean; stage: Stage
             <button className="icon-btn" title={t('inspector.addSubtask')} aria-label={t('inspector.addSubtask')} onClick={() => setAdding(true)}><IconCornerDownRight size={13} /></button>
           )}
           <button className="icon-btn" title={t('inspector.removeTask')} aria-label={t('inspector.removeTask')} onClick={() => call(api.taskRemove(task.id))}><IconTrash size={13} /></button>
+          <button className="icon-btn" title={t('task.open')} aria-label={t('task.open')} onClick={() => set({ selectedTask: task.id })}><IconChevronRight size={13} /></button>
         </span>
       </li>
       {adding && (
@@ -145,7 +150,7 @@ function FileTab({ stageKey, version }: { stageKey: string; version: string }) {
 
 export function Inspector({ stageKey }: { stageKey: string }) {
   const { t } = useTranslation();
-  const { stages, set, setStages, activity, agents } = useApp();
+  const { stages, set, setStages, activity, agents, selectedTask, inspWidth } = useApp();
   const call = useStageCall();
   const [otherWho, setOtherWho] = useState(false);
   const [tab, setTab] = useState<'details' | 'file'>('details');
@@ -176,9 +181,10 @@ export function Inspector({ stageKey }: { stageKey: string }) {
   }
 
   return (
-    <aside className="insp" aria-label={stage.title}>
+    <aside className="insp" aria-label={stage.title} style={{ width: inspWidth }}>
+      <div className="insp-resize" role="separator" aria-orientation="vertical" aria-label={t('inspector.resize')} title={t('inspector.resize')} onPointerDown={startResize} />
       <div className="i-top">
-        <span className="c-key">{stage.key}</span>
+        <KeyEdit stageKey={stage.key} />
         <div className="i-tabs" role="tablist">
           <button role="tab" aria-selected={tab === 'details'} className={tab === 'details' ? 'on' : ''} onClick={() => setTab('details')}><IconListDetails size={14} />{t('inspector.details')}</button>
           <button role="tab" aria-selected={tab === 'file'} className={tab === 'file' ? 'on' : ''} onClick={() => setTab('file')}><IconFileText size={14} />{t('inspector.file')}</button>
@@ -188,6 +194,8 @@ export function Inspector({ stageKey }: { stageKey: string }) {
       <div className="insp-scroll">
         {tab === 'file' ? (
           <FileTab stageKey={stage.key} version={JSON.stringify(stage)} />
+        ) : selectedTask && findTask(stage, selectedTask) ? (
+          <TaskDetail stage={stage} taskId={selectedTask} />
         ) : (
           <>
             <span className={`pill p-${stage.status}`}><StatusIcon status={stage.status} />{t(`status.${stage.status}`)}</span>
@@ -310,6 +318,179 @@ export function Inspector({ stageKey }: { stageKey: string }) {
         )}
       </div>
     </aside>
+  );
+}
+
+/** Stage key in the panel header: click to change it (file, task ids, links and cards follow). */
+function KeyEdit({ stageKey }: { stageKey: string }) {
+  const { t } = useTranslation();
+  const [editing, setEditing] = useState(false);
+  const commit = async (raw: string) => {
+    setEditing(false);
+    const next = raw.trim().toUpperCase();
+    if (!next || next === stageKey) return;
+    const st = useApp.getState();
+    try {
+      await st.flushSave();
+      const views = await api.stageRenameKey(stageKey, next);
+      // Load the board the core just rewrote before the canvas sees the new stages, and drop any save of the
+      // old board, or the old card ref would be written back.
+      if (st.activeBoard) {
+        const board = await api.boardLoad(st.activeBoard);
+        st.dropPendingSave();
+        st.set({ board });
+        editorRef.current?.setBoard(board, { keepCamera: true });
+      }
+      st.setStages(views);
+      st.set({ selectedStage: next, selectedTask: null });
+    } catch (e) {
+      st.set({ error: errorText(e) });
+    }
+  };
+  if (!editing) {
+    return <button className="c-key key-edit" title={t('inspector.renameKey')} onClick={() => setEditing(true)}>{stageKey}</button>;
+  }
+  return (
+    <input
+      autoFocus
+      className="inline-edit mono key-input"
+      defaultValue={stageKey}
+      maxLength={8}
+      aria-label={t('inspector.renameKey')}
+      onBlur={(e) => void commit(e.currentTarget.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur();
+        if (e.key === 'Escape') { e.currentTarget.value = stageKey; e.currentTarget.blur(); }
+      }}
+    />
+  );
+}
+
+/** Drag the panel's left edge; width is kept between 320 px and 70% of the window. */
+function startResize(e: React.PointerEvent<HTMLDivElement>) {
+  e.preventDefault();
+  const handle = e.currentTarget;
+  handle.setPointerCapture(e.pointerId);
+  const startX = e.clientX, startW = useApp.getState().inspWidth;
+  const move = (ev: PointerEvent) => {
+    const w = Math.min(Math.max(320, startW + (startX - ev.clientX)), Math.max(320, window.innerWidth * 0.7));
+    useApp.setState({ inspWidth: w });
+  };
+  const up = () => { handle.removeEventListener('pointermove', move); handle.removeEventListener('pointerup', up); };
+  handle.addEventListener('pointermove', move);
+  handle.addEventListener('pointerup', up);
+}
+
+/** A task or subtask of the stage by id, with its parent for subtasks. */
+function findTask(stage: StageView, id: string): { task: Task; parent: Task | null } | null {
+  for (const t of stage.tasks) {
+    if (t.id === id) return { task: t, parent: null };
+    const s = t.sub.find((x) => x.id === id);
+    if (s) return { task: s, parent: t };
+  }
+  return null;
+}
+
+/** One task: full title, state, who works on it, proof, subtasks, note, attached files and history. */
+function TaskDetail({ stage, taskId }: { stage: StageView; taskId: string }) {
+  const { t } = useTranslation();
+  const { set, agents } = useApp();
+  const call = useStageCall();
+  const found = findTask(stage, taskId)!;
+  const { task, parent } = found;
+  const done = isDone(task);
+  const claim = claimOf(stage, task.id);
+  const ev = stage.evidence?.[task.id];
+  const info = stage.taskInfo?.[task.id] ?? {};
+  const [history, setHistory] = useState<LogEntry[]>([]);
+  const [link, setLink] = useState('');
+  const [addingSub, setAddingSub] = useState('');
+  useEffect(() => {
+    api.activity(200, stage.key).then((l) => setHistory(l.filter((e) => e.tasks.includes(task.id)))).catch(() => setHistory([]));
+  }, [stage.key, task.id, JSON.stringify(stage)]);
+  const openFileAt = (f: string) => void (/^https?:\/\//i.test(f) ? openSession(f) : api.artifactOpen(f).catch((e) => set({ error: errorText(e) })));
+  const attach = async () => {
+    const root = useApp.getState().project?.root;
+    const picked = await openFile({ multiple: false, directory: false, defaultPath: root });
+    if (typeof picked === 'string') void call(api.taskFileAdd(task.id, picked));
+  };
+  return (
+    <div className="task-detail">
+      <button className="back" onClick={() => set({ selectedTask: parent ? parent.id : null })}>
+        <IconArrowLeft size={14} />{parent ? `${parent.id} · ${parent.title}` : `${stage.key} · ${stage.title}`}
+      </button>
+      <div className={`td-head ${done ? 'done' : ''}`}>
+        <button className="chk" aria-label={task.id} aria-pressed={done} onClick={() => call(api.taskToggle(task.id))}><IconCheck size={11} /></button>
+        <span className="tid">{task.id}</span>
+        <span className="muted">{done ? t('task.done') : t('task.open_')}</span>
+      </div>
+      <textarea
+        key={task.title}
+        className="td-title"
+        defaultValue={task.title}
+        rows={Math.min(8, Math.max(2, Math.ceil(task.title.length / 38)))}
+        onBlur={(e) => { const v = e.currentTarget.value.replace(/\s+/g, ' ').trim(); if (v && v !== task.title) void call(api.taskRename(task.id, v)); }}
+        onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.currentTarget.blur(); } }}
+      />
+      {claim && (
+        <p className={`td-claim ${claim.silent ? 'silent' : ''}`}>
+          {claim.silent && <IconAlertTriangle size={13} />}
+          {t('task.claimedBy', { agent: agentText(claim.agent, agents), ago: ago(claim.heartbeatAt ?? '', t) })}
+          {claim.note && <span className="muted"> · {claim.note}</span>}
+          <button className="icon-btn" title={t('agentsUi.release', { agent: agentText(claim.agent, agents) })} onClick={() => call(api.claimRelease(claim.taskId))}><IconX size={12} /></button>
+        </p>
+      )}
+      {done && ev && <div className="gate ok"><IconShieldCheck size={14} /><span className="grow">{evidenceText(ev, t, (x) => agentText(x, agents))}</span></div>}
+
+      {!parent && (
+        <>
+          <div className="i-h"><span>{t('task.subtasks')}</span><span>{task.sub.filter((s) => s.done).length} / {task.sub.length}</span></div>
+          <ul className="i-tasks">{task.sub.map((s) => <TaskRow key={s.id} task={s} sub stage={stage} />)}</ul>
+          <label className="add">
+            <IconPlus size={14} />
+            <input value={addingSub} placeholder={t('inspector.addSubtask')} onChange={(e) => setAddingSub(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && addingSub.trim()) { void call(api.subtaskAdd(task.id, addingSub.trim())); setAddingSub(''); } }} />
+          </label>
+        </>
+      )}
+
+      <div className="i-h"><span>{t('task.note')}</span></div>
+      <textarea
+        key={`${task.id}:${info.note ?? ''}`}
+        className="td-note"
+        defaultValue={info.note ?? ''}
+        placeholder={t('task.notePlaceholder')}
+        rows={4}
+        onBlur={(e) => { const v = e.currentTarget.value; if (v.trim() !== (info.note ?? '').trim()) void call(api.taskNoteSet(task.id, v)); }}
+      />
+
+      <div className="i-h"><span>{t('task.files')}</span></div>
+      <ul className="sessions">
+        {(info.files ?? []).map((f) => (
+          <li key={f}>
+            {/^https?:\/\//i.test(f) ? <IconLink size={13} className="muted" /> : <IconFileText size={13} className="muted" />}
+            <button className="grow mono file-link" title={f} onClick={() => openFileAt(f)}>{f}</button>
+            <button className="icon-btn" title={t('task.removeFile')} aria-label={t('task.removeFile')} onClick={() => call(api.taskFileRemove(task.id, f))}><IconX size={12} /></button>
+          </li>
+        ))}
+      </ul>
+      <div className="td-attach">
+        <button className="btn" onClick={() => void attach()}><IconPaperclip size={14} />{t('task.attachFile')}</button>
+        <input className="inline-edit" value={link} placeholder="https://…" onChange={(e) => setLink(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter' && link.trim()) { void call(api.taskFileAdd(task.id, link.trim())); setLink(''); } }} />
+      </div>
+
+      <div className="i-h"><span>{t('task.history')}</span></div>
+      {history.length === 0 && <p className="muted small">{t('task.noHistory')}</p>}
+      <ul className="td-history">
+        {history.map((e, i) => (
+          <li key={`${e.at}-${i}`}>
+            <b>{e.source === 'app' || e.author === 'me' ? t('who.me') : agentText(e.author, agents)}</b> {e.summary}
+            <span className="muted"> · {ago(e.at, t)}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 

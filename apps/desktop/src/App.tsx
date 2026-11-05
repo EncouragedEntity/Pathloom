@@ -4,6 +4,7 @@ import { applyCssVars, findTheme } from './theme';
 import { reopenLastProject } from './projectActions';
 import { StartScreen } from './components/StartScreen';
 import { Workspace } from './components/Workspace';
+import { QuickPick } from './components/QuickPick';
 
 export function App() {
   const project = useApp((s) => s.project);
@@ -24,5 +25,10 @@ export function App() {
   }, []);
 
   if (booting) return null;
-  return project ? <Workspace /> : <StartScreen />;
+  return (
+    <>
+      {project ? <Workspace /> : <StartScreen />}
+      <QuickPick />
+    </>
+  );
 }

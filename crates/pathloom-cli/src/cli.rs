@@ -190,6 +190,11 @@ pub enum StageCmd {
     Show {
         key: String,
     },
+    /// Change a stage key everywhere: file name, task ids, dependencies, cards, claims
+    RenameKey {
+        key: String,
+        new_key: String,
+    },
     List {
         /// done | active | ready | blocked
         #[arg(long)]

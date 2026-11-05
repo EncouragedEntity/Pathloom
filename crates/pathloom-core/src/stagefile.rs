@@ -13,9 +13,9 @@ pub fn is_valid_key(key: &str) -> bool {
         && b.iter().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
 }
 
-const KNOWN: [&str; 14] = [
+const KNOWN: [&str; 15] = [
     "id", "title", "kind", "who", "due", "priority", "branch", "pr", "tags", "depends", "sessions", "evidence", "artifacts",
-    "check",
+    "check", "task_info",
 ];
 
 fn opt_str(m: &Map<String, Value>, k: &str) -> Option<String> {
@@ -115,8 +115,23 @@ impl Stage {
                 Err(_) => keep_raw_evidence = true,
             }
         }
+        // And for `task_info`.
+        let mut keep_raw_info = false;
+        if let Some(Value::Object(o)) = map.get("task_info") {
+            let parsed: Result<std::collections::BTreeMap<String, TaskInfo>, String> = o
+                .iter()
+                .map(|(k, v)| serde_json::from_value::<TaskInfo>(v.clone()).map(|i| (k.clone(), i)).map_err(|e| e.to_string()))
+                .collect();
+            match parsed {
+                Ok(m) => st.task_info = m,
+                Err(_) => keep_raw_info = true,
+            }
+        }
         map.retain(|k, _| {
-            !KNOWN.contains(&k.as_str()) || (keep_raw_sessions && k == "sessions") || (keep_raw_evidence && k == "evidence")
+            !KNOWN.contains(&k.as_str())
+                || (keep_raw_sessions && k == "sessions")
+                || (keep_raw_evidence && k == "evidence")
+                || (keep_raw_info && k == "task_info")
         });
         st.extra = map;
         parse_body(&mut st, body);
@@ -185,6 +200,17 @@ impl Stage {
             .collect();
         if !ev.is_empty() {
             line("evidence", &yaml_value(&Value::Object(ev)));
+        }
+        // Task details only for tasks that still exist.
+        let ids = self.task_ids();
+        let info: Map<String, Value> = self
+            .task_info
+            .iter()
+            .filter(|(k, i)| ids.contains(k.as_str()) && !i.is_empty())
+            .map(|(k, i)| (k.clone(), serde_json::to_value(i).unwrap_or(Value::Null)))
+            .collect();
+        if !info.is_empty() {
+            line("task_info", &yaml_value(&Value::Object(info)));
         }
         for (k, v) in &self.extra {
             line(&scalar(k, false), &yaml_value(v));

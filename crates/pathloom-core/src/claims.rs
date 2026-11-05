@@ -333,6 +333,22 @@ impl Project {
         Ok(touched)
     }
 
+    /// Stage key changed: move its claims to the new task ids. Best effort.
+    pub(crate) fn rename_claims(&self, old: &str, new: &str) {
+        let Ok(_lock) = self.lock_claims() else { return };
+        let mut all = self.read_claims_raw();
+        let mut changed = false;
+        for c in &mut all {
+            if let Some(rest) = c.task_id.strip_prefix(old).and_then(|r| r.strip_prefix('-')) {
+                c.task_id = format!("{new}-{rest}");
+                changed = true;
+            }
+        }
+        if changed {
+            let _ = self.write_claims(all);
+        }
+    }
+
     /// Remove claims on tasks that are done in `stages` (called after a task is marked done).
     pub(crate) fn release_done_claims(&self, stages: &[Stage]) {
         let Ok(_lock) = self.lock_claims() else { return };

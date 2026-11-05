@@ -22,9 +22,12 @@ First public release.
 - Claude Code plugin and an Agent Skills file for other agents.
 
 ### App
+- Open a task to see its full title, note, attached files and history; the side panel resizes by dragging its edge.
+- Theme and language pickers with live preview, like VS Code (project menu or Ctrl+K).
+- Rename a stage key from the panel; task ids, links and cards follow.
 - Windows, macOS and Linux builds (Tauri 2). Only Windows is tested so far.
 - Graphite, Light and Warm paper themes, custom themes, English and Ukrainian, rebindable shortcuts.
-- Installer updates keep running agent sessions alive.
+- Installer in English and Ukrainian; updates keep running agent sessions alive; uninstall can keep or delete app data (your project files are never touched).
 
 ### Known limitations
 - Installers are not code-signed: Windows SmartScreen and macOS Gatekeeper show a warning.

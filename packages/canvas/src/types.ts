@@ -126,6 +126,8 @@ export interface StageView {
   progress: [number, number];
   /** Live task claims (agent working on a task); a claim on a task covers its subtasks. */
   claims?: { taskId: string; agent: string; expiresAt: string; heartbeatAt?: string; silent?: boolean; note?: string }[];
+  /** Per task id: a note and attached files (project-relative paths or links). */
+  taskInfo?: Record<string, { note?: string; files?: string[] }>;
   /** Proof per done task id: the check that was run (exit code 0). */
   evidence?: Record<string, Evidence>;
   /** External sessions (other apps) that worked on this stage, oldest first. */

@@ -47,6 +47,8 @@ The user reads the plan as a picture, left to right. Follow these rules whenever
   a task of a normal stage without evidence fails with `EVIDENCE_REQUIRED` (also for `tasks_done` in `apply`).
 - `heartbeat {task_id?, note?}` keeps your claims alive and tells the user you are still working. Any logged action
   counts as a sign of life; after 10 minutes without one the app shows your claim as silent.
+- `stages[].task_notes: {TASK-ID: text}` and `stages[].task_files_add: {TASK-ID: [paths or links]}` in `apply` attach a note
+  and files to one task (shown when the user opens the task).
 - `stages[].artifacts_add` in `apply` lists hand-off files (project-relative paths or http(s) links) on a stage;
   `get_stage` returns them as `artifacts`.
 - `kind: gate` stages have `check` (a command). Run it yourself and report with `set_gate {key, evidence}`:

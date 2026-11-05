@@ -4,15 +4,13 @@ import type { CanvasCommand } from '@pathloom/canvas';
 import { editorRef, useApp } from '../store';
 import { focusStage } from './Sidebar';
 import { openProject } from '../projectActions';
-import { setLanguage } from '../i18n';
-import { nextTheme } from '../theme';
 import { COMMAND_GROUPS, effectiveKeymap, label, useKeys } from '../keys';
 import { errorText } from '../api';
 
 /** Ctrl+K: search stages, tasks and boards, and run any command. */
 export function CommandPalette() {
-  const { t, i18n } = useTranslation();
-  const { paletteOpen, stages, boards, theme, customThemes, set, openBoard } = useApp();
+  const { t } = useTranslation();
+  const { paletteOpen, stages, boards, set, openBoard } = useApp();
   const keys = effectiveKeymap(useKeys((s) => s.overrides));
   if (!paletteOpen) return null;
 
@@ -53,8 +51,8 @@ export function CommandPalette() {
             <Command.Item value="open folder" onSelect={run(() => { openProject().catch((e) => set({ error: errorText(e) })); })}>{t('commands.app.openFolder')}</Command.Item>
             <Command.Item value="settings" onSelect={run(() => set({ settingsTab: 'general' }))}>{t('commands.app.settings')}</Command.Item>
             <Command.Item value="shortcuts keyboard" onSelect={run(() => set({ settingsTab: 'keys' }))}>{t('settings.shortcuts')}</Command.Item>
-            <Command.Item value="theme" onSelect={run(() => set({ theme: nextTheme(theme, customThemes) }))}>{t('palette.nextTheme')}</Command.Item>
-            <Command.Item value="language" onSelect={run(() => setLanguage(i18n.language === 'uk' ? 'en' : 'uk'))}>{t('sidebar.language')}</Command.Item>
+            <Command.Item value="theme color picker" onSelect={run(() => set({ picker: 'theme' }))}>{t('picker.theme')}</Command.Item>
+            <Command.Item value="language picker" onSelect={run(() => set({ picker: 'language' }))}>{t('picker.language')}</Command.Item>
             {canvasCommands.map((c) => (
               <Command.Item key={c} value={`${c} ${t(`commands.${c}`)}`} onSelect={run(() => editorRef.current?.runCommand(c))}>
                 {t(`commands.${c}`)}<span className="pal-meta">{label(c, keys)}</span>

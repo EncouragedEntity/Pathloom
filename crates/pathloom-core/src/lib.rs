@@ -19,6 +19,7 @@ mod model;
 mod next;
 mod project;
 mod proposals;
+mod rename;
 mod protocol;
 mod session;
 mod stagefile;
@@ -47,7 +48,7 @@ pub use import::ImportReport;
 pub use keygen::generate_key;
 pub use model::{
     AgentChanges, Board, Comment, Dep, Priority, ProjectConfig, Stage, StageKind, StageMeta, StageView, Status,
-    Task, Who,
+    Task, TaskInfo, Who,
 };
 pub use project::Project;
 pub use stagefile::is_valid_key;

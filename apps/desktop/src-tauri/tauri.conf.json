@@ -44,7 +44,13 @@
     },
     "windows": {
       "nsis": {
-        "installerHooks": "./windows/hooks.nsh"
+        "installerHooks": "./windows/hooks.nsh",
+        "installerIcon": "icons/icon.ico",
+        "headerImage": "windows/header.bmp",
+        "sidebarImage": "windows/sidebar.bmp",
+        "languages": ["English", "Ukrainian"],
+        "displayLanguageSelector": true,
+        "startMenuFolder": "Pathloom"
       }
     },
     "publisher": "XxArDy",

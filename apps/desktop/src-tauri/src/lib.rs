@@ -321,6 +321,52 @@ fn open_licenses(app: AppHandle) -> CmdResult<()> {
     app.opener().open_path(file.display().to_string(), None::<&str>).map_err(|e| e.to_string())
 }
 
+/// Change a stage key everywhere (file, task ids, dependencies, cards, claims).
+#[tauri::command]
+fn stage_rename_key(state: State<'_, AppState>, key: String, new_key: String) -> CmdResult<Vec<StageView>> {
+    with_project(&state, |p| {
+        let s = p.rename_stage_key(&key, &new_key)?;
+        log_app(p, "rename_key", &format!("{key} renamed to {}", s.key), vec![s.key.clone()], vec![]);
+        views(p)
+    })
+}
+
+#[tauri::command]
+fn task_note_set(state: State<'_, AppState>, task_id: String, note: String) -> CmdResult<Vec<StageView>> {
+    with_project(&state, |p| {
+        p.set_task_note(&task_id, &note)?;
+        views(p)
+    })
+}
+
+/// Attach a file to a task. `path` is a link, a project-relative path, or an absolute path inside the project
+/// (from the file picker); files outside the project are refused.
+#[tauri::command]
+fn task_file_add(state: State<'_, AppState>, task_id: String, path: String) -> CmdResult<Vec<StageView>> {
+    with_project(&state, |p| {
+        let abs = Path::new(&path);
+        let rel = if abs.is_absolute() {
+            let root = p.root.canonicalize()?;
+            let full = abs.canonicalize()?;
+            full.strip_prefix(&root)
+                .map(|r| r.to_string_lossy().replace('\\', "/"))
+                .map_err(|_| pathloom_core::Error::InvalidSpec("the file must be inside the project folder".into()))?
+        } else {
+            path.clone()
+        };
+        p.add_task_file(&task_id, &rel)?;
+        views(p)
+    })
+}
+
+#[tauri::command]
+fn task_file_remove(state: State<'_, AppState>, task_id: String, path: String) -> CmdResult<Vec<StageView>> {
+    with_project(&state, |p| {
+        p.remove_task_file(&task_id, &path)?;
+        views(p)
+    })
+}
+
 #[tauri::command]
 fn usage_summary(state: State<'_, AppState>) -> CmdResult<pathloom_core::UsageSummary> {
     with_project(&state, |p| p.usage_summary())
@@ -612,6 +658,10 @@ pub fn run() {
             set_agent_changes,
             set_require_evidence,
             recent_forget,
+            stage_rename_key,
+            task_note_set,
+            task_file_add,
+            task_file_remove,
             open_licenses,
             board_auto_layout,
             board_arrange,

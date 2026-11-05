@@ -418,6 +418,54 @@ impl Project {
         Ok((s, passed))
     }
 
+    /// Replace the note of a task or subtask (empty clears it). Up to 4000 characters.
+    pub fn set_task_note(&self, task_id: &str, note: &str) -> Result<Stage> {
+        let note = note.replace("\r\n", "\n").trim().to_string();
+        if note.chars().count() > 4000 {
+            return Err(Error::InvalidSpec("task note must be at most 4000 characters".into()));
+        }
+        self.edit_task_info(task_id, |i| {
+            i.note = note;
+            Ok(())
+        })
+    }
+
+    /// Attach a file (project-relative path or http(s) link) to a task; already attached is a no-op. Up to 20.
+    pub fn add_task_file(&self, task_id: &str, file: &str) -> Result<Stage> {
+        let f = check_artifact(file)?;
+        self.edit_task_info(task_id, |i| {
+            if !i.files.contains(&f) {
+                if i.files.len() >= 20 {
+                    return Err(Error::InvalidSpec(format!("task {task_id} has 20 files already")));
+                }
+                i.files.push(f);
+            }
+            Ok(())
+        })
+    }
+
+    pub fn remove_task_file(&self, task_id: &str, file: &str) -> Result<Stage> {
+        self.edit_task_info(task_id, |i| {
+            i.files.retain(|x| x != file);
+            Ok(())
+        })
+    }
+
+    fn edit_task_info(&self, task_id: &str, f: impl FnOnce(&mut TaskInfo) -> Result<()>) -> Result<Stage> {
+        let key = task_id.split('-').next().unwrap_or("");
+        self.edit_stage(key, |s| {
+            if !s.task_ids().contains(task_id) {
+                return Err(Error::NotFound(format!("task {task_id}")));
+            }
+            let info = s.task_info.entry(task_id.to_string()).or_default();
+            f(info)?;
+            if s.task_info.get(task_id).is_some_and(TaskInfo::is_empty) {
+                s.task_info.remove(task_id);
+            }
+            Ok(())
+        })
+    }
+
     /// Like [`Project::set_task_done`] with proof of the check that was run. Evidence goes only with
     /// `done = true` and must have exit code 0; `at` is filled in when empty. Reopening a task drops its evidence.
     pub fn set_task_done_with(&self, task_id: &str, done: bool, evidence: Option<Evidence>) -> Result<Stage> {

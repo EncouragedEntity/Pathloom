@@ -78,7 +78,9 @@
     "removeTask": "Remove task",
     "deleteStage": "Delete stage",
     "deleteConfirm": "Delete stage {{key}} «{{title}}»? Its file will be removed and links to it dropped.",
-    "fileHint": "This is a plain file in your project. Agents can edit it directly; the board updates right away."
+    "fileHint": "This is a plain file in your project. Agents can edit it directly; the board updates right away.",
+    "resize": "Drag to resize the panel",
+    "renameKey": "Change the stage key (A-Z, 0-9, up to 8; task ids, links and cards follow)"
   },
   "statusbar": {
     "ready": "{{count}} tasks ready",
@@ -322,5 +324,25 @@
   },
   "usage": {
     "title": "Spending"
+  },
+  "task": {
+    "open": "Open task",
+    "done": "Done",
+    "open_": "Open",
+    "subtasks": "Subtasks",
+    "note": "Note",
+    "notePlaceholder": "Details, decisions, links…",
+    "files": "Files and links",
+    "attachFile": "Attach file",
+    "removeFile": "Remove from task",
+    "history": "History",
+    "noHistory": "No actions on this task yet.",
+    "claimedBy": "{{agent}} is working on it (last sign of life {{ago}})"
+  },
+  "picker": {
+    "theme": "Theme…",
+    "language": "Language…",
+    "themePlaceholder": "Choose a theme (arrows preview it)",
+    "languagePlaceholder": "Choose the interface language"
   }
 }
