@@ -253,7 +253,7 @@ Early but usable (0.1). Tested on Windows. Linux and macOS builds are produced b
 
 ## Support the project
 
-Pathloom is free and open source. If it saves you time, you can support its development in crypto.
+Pathloom is free and open source. If it saves you time, you can support its development on [Patreon](https://www.patreon.com/XxArDy) or in crypto.
 
 **USDT on the TRON network (TRC20)**:
 
