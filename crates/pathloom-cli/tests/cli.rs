@@ -237,6 +237,46 @@ fn claims_and_log_commands() {
     assert!(p.run(&["log"]).status.success());
 }
 
+/// The board shows what an agent works on only through its claim: `next` tells agents to claim, closing an
+/// unclaimed task says so, and `heartbeat <ID>` claims a task the agent skipped claiming.
+#[test]
+fn agents_are_nudged_to_claim() {
+    let p = Proj::new();
+    let file = p.dir.path().join("spec.yaml");
+    std::fs::write(&file, SPEC).unwrap();
+    p.json(&["--author", "claude", "apply", file.to_str().unwrap()]);
+
+    assert!(p.json(&["--author", "claude", "next"])["hint"].as_str().unwrap().contains("claim"));
+
+    // heartbeat with a task id the agent does not hold: claims it, note included, logged as claim_task
+    let hb = p.json(&["--author", "claude", "task", "heartbeat", "A-01", "--note", "reading the spec"]);
+    assert_eq!(hb["claimed"], "A-01");
+    let list = p.json(&["claims"]);
+    assert_eq!(list["claims"][0]["task_id"], "A-01");
+    assert_eq!(list["claims"][0]["note"], "reading the spec");
+    assert_eq!(p.json(&["log"])["entries"][0]["action"], "claim_task");
+    assert!(p.json(&["--author", "claude", "next"]).get("hint").is_none(), "no nudge while the agent holds a task");
+
+    // claimed, then done: no hint
+    let done = p.json(&["--author", "claude", "task", "done", "A-01"]);
+    assert!(done.get("hint").is_none(), "{done}");
+
+    // done without a claim (task done and apply tasks_done): hint; human output prints it too
+    p.json(&["--author", "claude", "task", "undo", "A-01"]);
+    let done = p.json(&["--author", "claude", "task", "done", "A-01"]);
+    assert!(done["hint"].as_str().unwrap().starts_with("A-01 closed without a claim"));
+    let o = p.run(&["--author", "claude", "task", "undo", "A-01"]);
+    assert!(o.status.success());
+    let o = p.run(&["--author", "claude", "task", "done", "A-01"]);
+    assert!(String::from_utf8_lossy(&o.stdout).contains("hint: A-01 closed without a claim"));
+    p.json(&["--author", "claude", "task", "undo", "A-01"]);
+    std::fs::write(&file, "stages:
+  - {id: A, tasks_done: [A-01]}
+").unwrap();
+    let v = p.json(&["--author", "claude", "apply", file.to_str().unwrap()]);
+    assert!(v["hint"].as_str().unwrap().contains("A-01"));
+}
+
 #[test]
 fn log_failure_is_only_a_warning() {
     let p = Proj::new();

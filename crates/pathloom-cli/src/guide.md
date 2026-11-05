@@ -19,7 +19,9 @@ your changes live. Files are the source of truth, so every change is a normal fi
 ## Who and claims
 - `who: ai:<name>` assigns a stage to one named agent (`ai:claude`, `ai:codex`); plain `ai` means any agent.
   Your name is your MCP client name (shown in `claimed_by` and in `activity`). Prefer stages that are `ai` or `ai:<your name>`.
-- Several agents may work on the same plan. **Claim before you work**: `claim_task {task_id}` (default 30 min,
+- **Claim before you work**, always, even for one small task and through the CLI (`pathloom task claim <ID>`): the user
+  watches the board, and a claim is the only way they see which task you are on right now. `set_task` done on a task
+  you never claimed returns a `hint`. Several agents may share the plan: `claim_task {task_id}` (default 30 min,
   `ttl_minutes` up to 480; claim again to renew). `next` hides tasks claimed by others and lists yours first.
 - When the work is finished, `set_task` done: that releases the claim by itself. If you stop without finishing,
   call `release_task`. A claim on a task with subtasks covers its subtasks.
@@ -45,7 +47,8 @@ The user reads the plan as a picture, left to right. Follow these rules whenever
 - Close tasks with proof: `set_task {task_id, done: true, evidence: {command, exit_code: 0, duration_ms?, summary?, log?}}`.
   Run the real check first. Non-zero exit codes are refused. With `require_evidence: true` (in `project_info`) closing
   a task of a normal stage without evidence fails with `EVIDENCE_REQUIRED` (also for `tasks_done` in `apply`).
-- `heartbeat {task_id?, note?}` keeps your claims alive and tells the user you are still working. Any logged action
+- `heartbeat {task_id?, note?}` keeps your claims alive and tells the user you are still working (the note is shown
+  next to your name). With a `task_id` you do not hold yet it claims that task. Any logged action
   counts as a sign of life; after 10 minutes without one the app shows your claim as silent.
 - `stages[].task_notes: {TASK-ID: text}` and `stages[].task_files_add: {TASK-ID: [paths or links]}` in `apply` attach a note
   and files to one task (shown when the user opens the task).

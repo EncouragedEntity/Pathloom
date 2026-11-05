@@ -6,5 +6,5 @@ export { addHighlights, highlightAlpha, pruneHighlights, ghostEdges, boundsWithG
 export { cardLayout, extractEdges, statusColors, CARD_W } from './stage';
 export * from './keymap';
 export type { AgentProfile } from './agents';
-export { resolveAgent, avatarWidth, sameProfiles, agentColor, whoLabel, displayName, claimIndex, rowClaim } from './agents';
+export { resolveAgent, avatarWidth, sameProfiles, agentColor, whoLabel, displayName, claimIndex, rowClaim, pillLabel, claimChipText } from './agents';
 export { type EdgeOptions } from './edgeview';

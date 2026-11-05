@@ -52,9 +52,9 @@ frames:
    New cards are laid out automatically to the right of their dependencies. Re-applying the same spec is safe (tasks with the same title are not duplicated). Use `dry_run: true` to preview.
 3. While working:
    - `next` lists tasks you can do right now (unblocked, by priority and due date). Tasks taken by other agents are hidden; your own come first.
-   - **Claim before you start**: `claim_task {task_id}` (30 min by default, re-claim to extend). The card shows your name, and other agents won't take the task. A `CLAIMED` error means someone else is on it — pick another task; never force unless the user asks.
+   - **Claim before you start**: `claim_task {task_id}` (30 min by default, re-claim to extend). The user watches the board: the claim is the only way they see what you are working on right now (your name on the card and the task). Claim even for small tasks and when you work through the CLI (`pathloom task claim <ID>`); closing a task you never claimed returns a `hint` about it. Other agents won't take a claimed task. A `CLAIMED` error means someone else is on it — pick another task; never force unless the user asks.
    - Mark progress with `set_task {task_id, done: true, evidence: {command, exit_code: 0, duration_ms?, summary?}}` — run the real check (tests, build) first and attach its result: the task shows as **verified**. This also releases your claim. If you stop without finishing, call `release_task`. A failing check (exit code ≠ 0) never closes a task. Projects with `require_evidence: true` (see `project_info`) refuse `done` without evidence (`EVIDENCE_REQUIRED`).
-   - During long steps call `heartbeat {note?}` every few minutes (any other action counts too). After 10 minutes without a sign of life the app marks you as "silent, maybe stuck".
+   - During long steps call `heartbeat {note?}` every few minutes; the note ("running tests") is shown next to your name. `heartbeat {task_id}` on a task you have not claimed claims it (any other action counts too). After 10 minutes without a sign of life the app marks you as "silent, maybe stuck".
    - Notes and files for one task: `apply` → `stages: [{id, task_notes: {AUTH-02: "Use PKCE"}, task_files_add: {AUTH-02: [docs/auth.md]}}]`. The user opens a task in the app and sees its note, files and history.
    - List hand-off files of a stage (spec, plan, review notes) with `apply` → `stages: [{id, artifacts_add: [specs/auth/spec.md]}]`. A hand-off is an artifact, not a retelling: write the file, then link it.
    - Gate stages (`kind: gate`, with `check: npm test`) are done only when the check passes: run the command, then `set_gate {key, evidence}`.
@@ -101,6 +101,7 @@ If the project uses `agent_changes = "review"`, `apply` creates a **proposal** i
 
 ```
 pathloom next --json
+pathloom task claim AUTH-02 --note "writing the login form"   # before you start
 pathloom task done AUTH-02 --run "cargo test"   # runs the check, closes only if it passes
 pathloom task heartbeat --note "running tests"
 pathloom gate run TESTS

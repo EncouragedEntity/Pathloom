@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- MSI: put the install folder (it holds the bundled pathloom.exe CLI) on the system PATH, so AI clients can
+     start the MCP server as plain `pathloom mcp`. Removed on uninstall. Wired in tauri.conf.json -> bundle.windows.wix. -->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+    <DirectoryRef Id="INSTALLDIR">
+      <Component Id="PathloomOnPath" Guid="{461558C6-3B41-44FE-878E-9FB81623A6C3}">
+        <RegistryValue Root="HKLM" Key="Software\[Manufacturer]\[ProductName]" Name="OnPath" Type="integer" Value="1" KeyPath="yes" />
+        <Environment Id="PathloomPath" Name="PATH" Value="[INSTALLDIR]" Permanent="no" Part="last" Action="set" System="yes" />
+      </Component>
+    </DirectoryRef>
+  </Fragment>
+</Wix>

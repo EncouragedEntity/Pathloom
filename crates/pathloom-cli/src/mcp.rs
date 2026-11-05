@@ -131,7 +131,7 @@ struct InitParams {
 
 #[derive(Debug, Deserialize, JsonSchema)]
 struct HeartbeatParams {
-    /// Only this claimed task (default: all your claims)
+    /// Only this task (default: all your claims); claims it when you do not hold it yet
     task_id: Option<String>,
     /// What you are doing now, e.g. "running tests" (replaces the claim note)
     note: Option<String>,
@@ -318,12 +318,12 @@ impl PathloomServer {
                 None => self.actor(&ctx, None)?.name,
             };
             let tasks = self.project()?.next_tasks_for(a.limit.unwrap_or(10), Some(&agent))?;
-            Ok(json!({"tasks": tasks}))
+            Ok(ops::next_result(json!(tasks)))
         })())
     }
 
     #[tool(
-        description = "Claim a task before working on it so other agents skip it. Same agent claiming again renews. Fails with CLAIMED (details: task_id, by, expires_at) when someone else holds it. Marking the task done releases the claim.",
+        description = "Call this when you START a task, before doing the work: the claim is how the user sees on the board what you are working on right now (your name on the card), and other agents skip the task. Same agent claiming again renews. Fails with CLAIMED (details: task_id, by, expires_at) when someone else holds it. Marking the task done releases the claim.",
         annotations(idempotent_hint = true)
     )]
     async fn claim_task(&self, Parameters(a): Parameters<ClaimParams>, ctx: RequestContext<RoleServer>) -> CallToolResult {
@@ -377,7 +377,7 @@ impl PathloomServer {
     }
 
     #[tool(
-        description = "Mark a task or subtask done (true) or not done (false). Attach `evidence` (the check you ran, exit_code 0) so the task shows as verified. Returns the stage's new status."
+        description = "Mark a task or subtask done (true) or not done (false); claim_task it first when you start the work. Attach `evidence` (the check you ran, exit_code 0) so the task shows as verified. Returns the stage's new status."
     )]
     async fn set_task(&self, Parameters(a): Parameters<SetTaskParams>, ctx: RequestContext<RoleServer>) -> CallToolResult {
         finish((|| {
@@ -387,7 +387,7 @@ impl PathloomServer {
     }
 
     #[tool(
-        description = "Still working: refresh your claims so the app does not show you as silent (after 10 min without any action) and they do not expire. Call every few minutes during long steps.",
+        description = "Still working: refresh your claims so the app does not show you as silent (after 10 min without any action) and they do not expire. Call every few minutes during long steps; `note` tells the user what you are doing. With a task_id you have not claimed yet it claims that task.",
         annotations(idempotent_hint = true)
     )]
     async fn heartbeat(&self, Parameters(a): Parameters<HeartbeatParams>, ctx: RequestContext<RoleServer>) -> CallToolResult {
@@ -492,7 +492,7 @@ impl ServerHandler for PathloomServer {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().enable_resources().build())
             .with_server_info(Implementation::new("pathloom", env!("CARGO_PKG_VERSION")))
             .with_instructions(
-                "Pathloom project plan. Start with project_info, then next; claim_task before working. Read pathloom://guide/workflow for the rules."
+                "Pathloom project plan. Start with project_info, then next. When you start a task, call claim_task first: the user watches the board and sees what you are doing only through your claim. set_task done releases it. Read pathloom://guide/workflow for the rules."
                     .to_string(),
             )
     }

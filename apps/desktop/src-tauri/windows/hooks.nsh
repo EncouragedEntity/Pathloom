@@ -25,12 +25,30 @@
   ${EndIf}
 !macroend
 
+; AI clients start the MCP server as plain `pathloom` (the Claude Code plugin's .mcp.json, README snippets),
+; so the install folder goes on the user's PATH (HKCU\Environment, kept REG_EXPAND_SZ so %VARS% in it survive).
+; The final SetEnvironmentVariable only broadcasts the change: new terminals and agent sessions see it. The folder is passed through an
+; environment variable of the installer process, so no path is ever quoted into the command line.
+; ACTION = add | remove. $R8 is saved: the Tauri template may use it.
+!macro PATHLOOM_USER_PATH ACTION
+  System::Call 'Kernel32::SetEnvironmentVariable(t "PATHLOOM_DIR", t "$INSTDIR")i'
+  Push $R8
+  nsExec::Exec `powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$$d = $$env:PATHLOOM_DIR.TrimEnd('\'); $$k = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Environment'); $$p = $$k.GetValue('Path', '', 'DoNotExpandEnvironmentNames'); $$parts = @($$p -split ';' | Where-Object { $$_ -and $$_.TrimEnd('\') -ne $$d }); if ('${ACTION}' -eq 'add') { $$parts += $$d }; $$k.SetValue('Path', ($$parts -join ';'), 'ExpandString'); [Environment]::SetEnvironmentVariable('PATHLOOM_DIR', $$null, 'User')"`
+  Pop $R8 ; exit code (best effort: a failure only means `pathloom` is not on PATH)
+  Pop $R8
+!macroend
+
+!macro NSIS_HOOK_POSTINSTALL
+  !insertmacro PATHLOOM_USER_PATH add
+!macroend
+
 !macro NSIS_HOOK_PREINSTALL
   !insertmacro PATHLOOM_MOVE_CLI_ASIDE
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
   !insertmacro PATHLOOM_MOVE_CLI_ASIDE
+  !insertmacro PATHLOOM_USER_PATH remove
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL

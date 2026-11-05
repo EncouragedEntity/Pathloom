@@ -89,3 +89,12 @@ export function rowClaim(idx: Map<string, Claim>, task: Task): Claim | undefined
   const find = (t: Task): Claim | undefined => idx.get(t.id) ?? t.sub.map(find).find(Boolean);
   return find(task);
 }
+
+/** Status pill text: "working" while an agent holds a live claim on a stage that is not done, else the status label. */
+export function pillLabel(stage: Pick<StageView, 'status' | 'claims'>, L: CanvasLabels): string {
+  if (stage.status !== 'done' && stage.claims?.length) return L.working;
+  return { done: L.statusDone, active: L.statusActive, ready: L.statusReady, blocked: L.statusBlocked }[stage.status];
+}
+
+/** Claim chip text on a task row: agent name, then its heartbeat note ("Claude · running tests"). */
+export const claimChipText = (name: string, note?: string): string => (note?.trim() ? `${name} · ${note.trim()}` : name);

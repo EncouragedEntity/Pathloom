@@ -15,6 +15,8 @@ First public release.
 
 ### Agents
 - `pathloom` CLI and `pathloom mcp` server: read the plan, apply batch changes, tick tasks, comment, validate.
+- The board shows what an agent is doing: a claimed task gets a half-filled circle and a chip with the agent's name and heartbeat note ("Claude · running tests"), and its card says "working" in the agent's colour.
+- Agents are nudged to claim: `next` asks them to, closing a task that was never claimed returns a hint, and `heartbeat <ID>` claims the task.
 - Several agents at once: task claims with heartbeat, named assignees, agent profiles, activity log, links to client sessions, `pathloom watch --json` event stream.
 - Proof of done: tasks closed with the check that ran (`--run`), optional rule that agents must attach it.
 - Review mode: agent changes become proposals you accept or reject. Live reload with highlights and one-click undo.
@@ -27,6 +29,7 @@ First public release.
 - Rename a stage key from the panel; task ids, links and cards follow.
 - Windows, macOS and Linux builds (Tauri 2). Only Windows is tested so far.
 - Graphite, Light and Warm paper themes, custom themes, English and Ukrainian, rebindable shortcuts.
+- Windows installers put the Pathloom folder on PATH (removed on uninstall), so AI clients start the MCP server as plain `pathloom mcp`.
 - Installer in English and Ukrainian; updates keep running agent sessions alive; uninstall can keep or delete app data (your project files are never touched).
 
 ### Known limitations

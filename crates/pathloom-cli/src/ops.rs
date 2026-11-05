@@ -220,8 +220,14 @@ pub fn submit(p: &Project, spec: &ApplySpec, author: &str, dry_run: bool, direct
         return Ok(json!({"mode": "proposed", "proposal_id": prop.id, "report": prop.preview,
                          "note": "agent_changes=review: the plan is unchanged until a human accepts this proposal"}));
     }
+    let done: Vec<String> = spec.stages.iter().flat_map(|s| s.tasks_done.iter().cloned()).collect();
+    let hint = unclaimed_hint(p, &normalize_agent(author), &done);
     let r = p.apply(spec, &ApplyOptions { dry_run: false, author: author.into() })?;
-    Ok(json!({"mode": "applied", "report": r}))
+    let mut v = json!({"mode": "applied", "report": r});
+    if let Some(h) = hint {
+        v["hint"] = json!(h);
+    }
+    Ok(v)
 }
 
 pub fn parse_spec_value(v: &Value) -> ApiResult<ApplySpec> {
@@ -252,8 +258,12 @@ pub fn set_task(
         e
     });
     let verified = evidence.as_ref().map(|e| e.command.clone());
+    let hint = if done { unclaimed_hint(p, &a.name, &[task_id.to_string()]) } else { None };
     let s = p.set_task_done_with(task_id, done, evidence)?;
-    let v = json!({"task_id": task_id, "done": done, "verified": verified.is_some(), "stage": brief(&s, p)?});
+    let mut v = json!({"task_id": task_id, "done": done, "verified": verified.is_some(), "stage": brief(&s, p)?});
+    if let Some(h) = hint {
+        v["hint"] = json!(h);
+    }
     let summary = match (done, verified) {
         (true, Some(cmd)) => format!("{task_id} done, verified: {}", cmd.chars().take(60).collect::<String>()),
         (true, None) => format!("{task_id} done"),
@@ -428,6 +438,38 @@ pub fn log_submit(p: &Project, a: &Actor, action: &str, spec: &ApplySpec, v: Val
     log(p, a, entry(action, summary, stages, tasks, strings(&r["files"])), v)
 }
 
+/// Told to agents by `next` (and the MCP server instructions): the claim is what the user sees on the board.
+pub const CLAIM_HINT: &str = "Claim the task you pick (claim_task / `pathloom task claim <ID>`) before you start: the user watches the board and sees only claimed tasks as being worked on. set_task done releases the claim.";
+
+/// `next` result `{tasks}` plus [`CLAIM_HINT`] when there is work and the agent holds none of it yet.
+pub fn next_result(tasks: Value) -> Value {
+    let list = tasks.as_array().map(Vec::as_slice).unwrap_or_default();
+    if list.is_empty() || list.iter().any(|t| t["claimed_by"].is_string()) {
+        json!({"tasks": tasks})
+    } else {
+        json!({"tasks": tasks, "hint": CLAIM_HINT})
+    }
+}
+
+/// Tasks closed by `agent` that it never claimed: the user saw no sign of the work on the board until it was done.
+/// A claim on a parent task covers its subtasks (`A-01` covers `A-01a`).
+fn unclaimed_hint(p: &Project, agent: &str, task_ids: &[String]) -> Option<String> {
+    let claims = p.claims().unwrap_or_default();
+    let covered = |t: &str| {
+        claims.iter().any(|c| {
+            c.agent == agent
+                && t.strip_prefix(c.task_id.as_str()).is_some_and(|rest| rest.chars().all(|ch| ch.is_ascii_lowercase()))
+        })
+    };
+    let missed: Vec<&str> = task_ids.iter().map(String::as_str).filter(|t| !covered(t)).collect();
+    (!missed.is_empty()).then(|| {
+        format!(
+            "{} closed without a claim, so the user never saw you working on it. Next time claim a task when you start it (claim_task / `pathloom task claim <ID>`), and heartbeat with a note during long steps.",
+            missed.join(", ")
+        )
+    })
+}
+
 pub fn claim_task(p: &Project, a: &Actor, task_id: &str, ttl_secs: u64, note: &str) -> ApiResult<Value> {
     let c = p.claim_task_with(task_id, &a.name, ttl_secs, note, a.session.as_ref())?;
     let e = entry("claim_task", format!("claimed {task_id}"), vec![stage_key(task_id)], vec![task_id.into()], vec![]);
@@ -463,9 +505,16 @@ fn unix_now() -> i64 {
 }
 
 /// "Still working": refresh the actor's claims (one task or all) and keep them alive. Not logged.
+/// With a `task_id` the actor does not hold yet, it claims that task (logged as `claim_task`): an agent saying
+/// "I am working on X" should show up on the board even if it skipped claim_task.
 pub fn heartbeat(p: &Project, a: &Actor, task_id: Option<&str>, note: Option<&str>) -> ApiResult<Value> {
-    let touched = p.heartbeat(&a.name, task_id, note)?;
-    Ok(json!({"agent": a.name, "claims": touched}))
+    match (p.heartbeat(&a.name, task_id, note), task_id) {
+        (Err(Error::NotFound(_)), Some(t)) => {
+            let c = claim_task(p, a, t, 0, note.unwrap_or(""))?;
+            Ok(json!({"agent": a.name, "claims": [c], "claimed": t}))
+        }
+        (r, _) => Ok(json!({"agent": a.name, "claims": r?})),
+    }
 }
 
 /// Record a gate's check result (`kind: gate`). A failing result reopens the gate; it is still logged.

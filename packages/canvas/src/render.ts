@@ -11,7 +11,7 @@ import type { Scene } from './scene';
 import { CARD, CARD_W, MS, edgeCurve, isMilestone, ellipsize, mixColors, statusColors, taskDone, withAlpha, wrapText, type CardLayout, type CardRect, type DepEdge } from './stage';
 import { measureText } from './measure';
 import type { CanvasLabels } from './editor-types';
-import { AVATAR_SIZE, avatarWidth, claimIndex, isAssetAvatar, resolveAgent, rowClaim, whoLabel, whoName } from './agents';
+import { AVATAR_SIZE, avatarWidth, claimChipText, claimIndex, isAssetAvatar, pillLabel, resolveAgent, rowClaim, whoLabel, whoName } from './agents';
 import { execAlpha, frameHeaderRect } from './ops';
 import { STICKY_PAD, wrapLines, type Guide } from './arrange';
 import type { ImageCache } from './media';
@@ -725,8 +725,7 @@ export class Renderer {
     const wn = whoName(stage.who), ag = wn ? resolveAgent(wn, s.agents, t) : null, wc = ag?.color ?? null;
     // the who chip gets only the room left between the key and the status pill (+ the claim dot), so long
     // localized statuses ("Можна починати") never overlap it
-    const L2 = s.labels;
-    const pillText = { done: L2.statusDone, active: L2.statusActive, ready: L2.statusReady, blocked: L2.statusBlocked }[stage.status];
+    const pillText = pillLabel(stage, s.labels);
     ctx.font = fontOf(11, t.fontUi);
     const pillLeft = W - px - pillWidth(pillText, t) - (stage.claims?.length ? 16 : 6);
     ctx.font = fontOf(10, t.fontUi);
@@ -781,7 +780,7 @@ export class Renderer {
     }
   }
 
-  private drawTaskRow(ctx: CanvasRenderingContext2D, task: CardLayout['tasks'][number]['task'], y: number, s: RenderState, claim?: { agent: string; silent?: boolean }, verified = false) {
+  private drawTaskRow(ctx: CanvasRenderingContext2D, task: CardLayout['tasks'][number]['task'], y: number, s: RenderState, claim?: { agent: string; silent?: boolean; note?: string }, verified = false) {
     const t = s.theme, px = CARD.padX, cy = y + CARD.taskH / 2, done = taskDone(task);
     const cx = px + CARD.chk / 2 + 1;
     ctx.beginPath(); ctx.arc(cx, cy, CARD.chk / 2 - 0.5, 0, Math.PI * 2);
@@ -791,6 +790,11 @@ export class Renderer {
       ctx.beginPath(); ctx.moveTo(cx - 3.2, cy + 0.2); ctx.lineTo(cx - 0.8, cy + 2.6); ctx.lineTo(cx + 3.4, cy - 2.4); ctx.stroke();
       // verified (evidence attached): a second ring around the check
       if (verified) { ctx.beginPath(); ctx.arc(cx, cy, CARD.chk / 2 + 2, 0, Math.PI * 2); ctx.strokeStyle = t.ok; ctx.lineWidth = 1.2; ctx.stroke(); }
+    } else if (claim) {
+      // in progress: ring and half fill in the agent's colour (warning colour when silent)
+      const col = claim.silent ? t.warn : resolveAgent(claim.agent, s.agents, t).color;
+      ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, CARD.chk / 2 - 3, -Math.PI / 2, Math.PI / 2); ctx.closePath(); ctx.fillStyle = col; ctx.fill();
     } else { ctx.strokeStyle = t.border2; ctx.lineWidth = 1.5; ctx.stroke(); }
     let x = px + CARD.chk + 7;
     ctx.textBaseline = 'middle'; ctx.textAlign = 'left';
@@ -803,7 +807,8 @@ export class Renderer {
       // silent agent (no sign of life for 10 min): warning colour instead of its own
       const col = claim.silent ? t.warn : r.color;
       ctx.font = fontOf(10, t.fontUi, 600);
-      const txt = ellipsize(name, 64, (q) => measureText(q, ctx.font)), avW = avatarWidth(avatar, (q) => measureText(q, ctx.font)), cw = measureText(txt, ctx.font) + 10 + avW;
+      // with a heartbeat note the chip may take up to half the row, so "what it is doing" stays readable
+      const txt = ellipsize(claimChipText(name, claim.note), claim.note ? 140 : 64, (q) => measureText(q, ctx.font)), avW = avatarWidth(avatar, (q) => measureText(q, ctx.font)), cw = measureText(txt, ctx.font) + 10 + avW;
       ctx.beginPath(); ctx.roundRect(right - cw, cy - 7, cw, 14, 5); ctx.fillStyle = withAlpha(col, 0.16); ctx.fill();
       if (avatar) this.drawAvatar(ctx, avatar, right - cw + 5, cy, col, s);
       ctx.fillStyle = col; ctx.textAlign = 'left'; ctx.fillText(txt, right - cw + 5 + avW, cy + 0.5);
@@ -838,13 +843,15 @@ export class Renderer {
   }
 
   private drawPill(ctx: CanvasRenderingContext2D, stage: StageView, right: number, cy: number, s: RenderState) {
-    const L = s.labels;
-    const text = { done: L.statusDone, active: L.statusActive, ready: L.statusReady, blocked: L.statusBlocked }[stage.status];
-    const { fg, bg } = statusColors(stage.status, s.theme);
+    const text = pillLabel(stage, s.labels);
+    // a live claim turns the pill into "working" in the agent's colour (warning colour when it went silent)
+    const cl = stage.status !== 'done' ? stage.claims?.[0] : undefined;
+    const ac = cl && (cl.silent ? s.theme.warn : resolveAgent(cl.agent, s.agents, s.theme).color);
+    const { fg, bg } = ac ? { fg: ac, bg: withAlpha(ac, 0.16) } : statusColors(stage.status, s.theme);
     ctx.font = fontOf(11, s.theme.fontUi);
     const w = pillWidth(text, s.theme), h = 20, x = right - w;
     ctx.beginPath(); ctx.roundRect(x, cy - h / 2, w, h, h / 2); ctx.fillStyle = bg; ctx.fill();
-    this.statusIcon(ctx, stage.status, x + 7 + 6.5, cy, fg);
+    this.statusIcon(ctx, ac ? 'active' : stage.status, x + 7 + 6.5, cy, fg);
     ctx.fillStyle = fg; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
     ctx.fillText(text, x + 7 + 13 + 4, cy + 0.5);
   }
@@ -945,8 +952,7 @@ export class Renderer {
       ctx.setTransform(dpr * cam.scale, 0, 0, dpr * cam.scale, dpr * cam.x, dpr * cam.y);
       ctx.globalAlpha = o.pulseAlpha;
       for (const p of o.pulses) {
-        const cl = p.stage.claims![0], L = s.labels;
-        const text = { done: L.statusDone, active: L.statusActive, ready: L.statusReady, blocked: L.statusBlocked }[p.stage.status];
+        const cl = p.stage.claims![0], text = pillLabel(p.stage, s.labels);
         ctx.fillStyle = cl.silent ? t.warn : resolveAgent(cl.agent, s.agents, t).color;
         ctx.beginPath(); ctx.arc(p.el.x + CARD_W - CARD.padX - pillWidth(text, t) - 9, p.el.y + CARD.padTop + CARD.headH / 2, 3.5, 0, Math.PI * 2); ctx.fill();
       }

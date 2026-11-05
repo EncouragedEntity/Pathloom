@@ -52,7 +52,7 @@ function views(): StageView[] {
   return raw.map((s) => ({
     key: s.key, title: s.title, kind: s.kind ?? 'stage', who: s.who, due: s.due, priority: s.priority, branch: s.branch, pr: null, tags: [],
     depends: s.depends, description: '', tasks: s.tasks, comments: [], status: compute(s.key),
-    claims: claimsOn ? s.tasks.filter((x) => claimMap.has(x.id)).map((x) => ({ taskId: x.id, agent: claimMap.get(x.id)!, expiresAt: '2099-01-01T00:00:00Z' })) : [],
+    claims: claimsOn ? s.tasks.filter((x) => claimMap.has(x.id)).map((x) => ({ taskId: x.id, agent: claimMap.get(x.id)!, expiresAt: '2099-01-01T00:00:00Z', ...(x.id === 'M1-02' ? { note: 'running tests' } : {}) })) : [],
     progress: [s.tasks.filter(taskDone).length, s.tasks.length],
   }));
 }

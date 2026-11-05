@@ -51,6 +51,10 @@
         "languages": ["English", "Ukrainian"],
         "displayLanguageSelector": true,
         "startMenuFolder": "Pathloom"
+      },
+      "wix": {
+        "fragmentPaths": ["./windows/path.wxs"],
+        "componentRefs": ["PathloomOnPath"]
       }
     },
     "publisher": "XxArDy",

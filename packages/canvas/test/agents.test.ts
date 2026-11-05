@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AVATAR_GAP, AVATAR_SIZE, agentColor, avatarWidth, claimIndex, displayName, resolveAgent, rowClaim, sameProfiles, whoLabel } from '../src/agents';
+import { AVATAR_GAP, AVATAR_SIZE, agentColor, avatarWidth, claimChipText, claimIndex, displayName, pillLabel, resolveAgent, rowClaim, sameProfiles, whoLabel } from '../src/agents';
 import { DEFAULT_LABELS } from '../src/editor-types';
 import { cardLayout, parseHex } from '../src/stage';
 import type { StageView, Task, ThemeTokens } from '../src/types';
@@ -65,6 +65,18 @@ describe('claims', () => {
     const idx = claimIndex({ tasks, claims: [claim('A-1'), claim('A-1.1', 'codex')] });
     expect(idx.get('A-1.1')?.agent).toBe('codex');
     expect(idx.get('A-1.2')?.agent).toBe('claude');
+  });
+  it('a live claim shows the stage as working until it is done', () => {
+    const L = DEFAULT_LABELS;
+    expect(pillLabel({ status: 'ready', claims: [] }, L)).toBe(L.statusReady);
+    expect(pillLabel({ status: 'ready', claims: [claim('A-1')] }, L)).toBe(L.working);
+    expect(pillLabel({ status: 'active', claims: [claim('A-1')] }, L)).toBe(L.working);
+    expect(pillLabel({ status: 'done', claims: [claim('A-1')] }, L)).toBe(L.statusDone);
+  });
+  it('claim chip shows the heartbeat note after the name', () => {
+    expect(claimChipText('Claude')).toBe('Claude');
+    expect(claimChipText('Claude', '  ')).toBe('Claude');
+    expect(claimChipText('Claude', 'running tests')).toBe('Claude · running tests');
   });
   it('claims do not change card height', () => {
     const base = { key: 'A', title: 'A fairly long stage title that wraps', kind: 'stage', who: 'ai:claude', due: null, priority: 'med', tasks } as unknown as StageView;

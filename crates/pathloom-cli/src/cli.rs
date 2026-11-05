@@ -253,6 +253,7 @@ pub enum TaskCmd {
     },
     /// Still working: refresh your claims (all, or one task) so they are not shown as silent or expire
     Heartbeat {
+        /// Only this task; claims it when you do not hold it yet
         task_id: Option<String>,
         /// What you are doing now (replaces the claim note)
         #[arg(long)]

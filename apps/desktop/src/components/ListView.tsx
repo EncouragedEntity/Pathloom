@@ -6,6 +6,7 @@ import { api, errorText } from '../api';
 import { useApp } from '../store';
 import { StatusIcon, focusStage } from './Sidebar';
 import { agentText, claimOf, knownWhos, whoText } from '../agents';
+import { claimChipText } from '@pathloom/canvas';
 
 type Filter = 'all' | 'next' | 'blocked' | 'done';
 const isDone = (t: Task) => (t.sub.length ? t.sub.every((s) => s.done) : t.done);
@@ -74,7 +75,7 @@ export function ListView() {
                   <td className="tt">{task.title}{task.sub.length > 0 && <span className="subc"> {task.sub.filter((s) => s.done).length}/{task.sub.length}</span>}</td>
                   <td><button className="dep" onClick={() => goTo(stage.key)}>{stage.key}</button> <span className="st-title">{stage.title}</span></td>
                   <td><span className={`who ${stage.who.split(':')[0]}`}>{whoText(stage.who, t, agents)}</span></td>
-                  <td className="muted">{(() => { const c = claimOf(stage, task.id); return c ? agentText(c.agent, agents) : ''; })()}</td>
+                  <td className="muted">{(() => { const c = claimOf(stage, task.id); return c ? claimChipText(agentText(c.agent, agents), c.note) : ''; })()}</td>
                   <td><span className={`pill p-${stage.status}`}><StatusIcon status={stage.status} />{t(`status.${stage.status}`)}</span></td>
                 </tr>
               );

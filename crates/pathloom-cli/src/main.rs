@@ -67,6 +67,10 @@ fn emit(cli: &Cli, json: &Value, human: impl FnOnce() -> String) {
         println!("{json}");
     } else {
         println!("{}", human());
+        // agents driving the CLI read stdout: keep the nudge to claim visible there too
+        if let Some(h) = json["hint"].as_str() {
+            println!("hint: {h}");
+        }
     }
 }
 
@@ -313,7 +317,13 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
             let v = ops::heartbeat(&open(cli)?, &actor, task_id.as_deref(), note.as_deref())?;
             emit(cli, &v, || {
                 let n = v["claims"].as_array().map_or(0, Vec::len);
-                if n == 0 { "No claims to refresh.".into() } else { format!("Refreshed {n} claim(s) of {}", actor.name) }
+                if let Some(t) = v["claimed"].as_str() {
+                    format!("Claimed {t} for {}", actor.name)
+                } else if n == 0 {
+                    "No claims to refresh.".into()
+                } else {
+                    format!("Refreshed {n} claim(s) of {}", actor.name)
+                }
             });
         }
         Cmd::Gate(GateCmd::Run { key }) => {
@@ -421,7 +431,7 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
         }
         Cmd::Next { limit } => {
             let tasks = open(cli)?.next_tasks_for(*limit, Some(&actor.name))?;
-            let v = json!({"tasks": tasks});
+            let v = ops::next_result(json!(tasks));
             emit(cli, &v, || {
                 if tasks.is_empty() {
                     return "Nothing to do right now.".into();
