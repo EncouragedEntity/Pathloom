@@ -124,10 +124,16 @@ fn is_plan_file(p: &Path) -> bool {
 
 pub type ProjectWatcher = Debouncer<notify::RecommendedWatcher, RecommendedCache>;
 
-/// Starts watching `plan_dir` and `.pathloom/proposals`. Drop the returned watcher to stop.
+/// Starts watching `plan_dir`, `.pathloom/proposals`, `.pathloom/claims.json` and `.pathloom/log/`.
+/// Claims and log changes emit `agents-changed` (no undo group, no "changed outside" banner).
+/// Drop the returned watcher to stop.
 pub fn start(app: AppHandle, root: PathBuf, plan_dir: PathBuf, snapshot: &'static Mutex<Snapshot>) -> notify::Result<ProjectWatcher> {
-    let proposals = root.join(".pathloom").join("proposals");
+    let meta_dir = root.join(".pathloom");
+    let proposals = meta_dir.join("proposals");
     let proposals_dir = proposals.clone();
+    let claims_file = meta_dir.join("claims.json");
+    let log_dir = meta_dir.join("log");
+    let (claims_w, log_w) = (claims_file.clone(), log_dir.clone());
     let boards_dir = plan_dir.join("boards");
     let stages_dir = plan_dir.join("stages");
     let mut debouncer = new_debouncer(Duration::from_millis(200), None, move |res: DebounceEventResult| {
@@ -139,8 +145,13 @@ pub fn start(app: AppHandle, root: PathBuf, plan_dir: PathBuf, snapshot: &'stati
             }
         }
         let mut out = PlanChanged::default();
+        let mut agents = false;
         let Ok(mut snap) = snapshot.lock() else { return };
         for p in paths {
+            if p == claims_w || p.starts_with(&log_w) {
+                agents = true;
+                continue;
+            }
             if p.starts_with(&proposals) {
                 out.proposals = true;
                 continue;
@@ -170,10 +181,19 @@ pub fn start(app: AppHandle, root: PathBuf, plan_dir: PathBuf, snapshot: &'stati
         if !out.stages.is_empty() || !out.boards.is_empty() || out.proposals {
             let _ = app.emit("plan-changed", out);
         }
+        if agents {
+            let _ = app.emit("agents-changed", ());
+        }
     })?;
     debouncer.watch(&plan_dir, RecursiveMode::Recursive)?;
     if std::fs::create_dir_all(&proposals_dir).is_ok() {
         debouncer.watch(&proposals_dir, RecursiveMode::NonRecursive)?;
     }
+    // claims.json lives directly in .pathloom; watch the folder, filter by path above.
+    debouncer.watch(&meta_dir, RecursiveMode::NonRecursive)?;
+    if std::fs::create_dir_all(&log_dir).is_ok() {
+        debouncer.watch(&log_dir, RecursiveMode::NonRecursive)?;
+    }
+    let _ = &claims_file;
     Ok(debouncer)
 }

@@ -87,13 +87,28 @@ async function onPlanChanged(ev: PlanChanged): Promise<void> {
   if (ev.proposals) await refreshProposals();
 }
 
+/** Claims or the activity log changed (agents started/finished work): refresh both, no banner. */
+export async function refreshAgents(): Promise<void> {
+  const st = useApp.getState();
+  if (!st.project) return;
+  try {
+    st.setStages(await api.stagesList());
+    st.set({ activity: await api.activity(50), agents: await api.agentsList() });
+  } catch {
+    // Best effort: the plan itself is unaffected.
+  }
+}
+
 /** Subscribes once per opened project; returns the unsubscribe function. */
 export async function startAgentSync(): Promise<() => void> {
   const un = await listen<PlanChanged>('plan-changed', (e) => {
-    onPlanChanged(e.payload).catch((err) => useApp.getState().set({ error: errorText(err) }));
+    onPlanChanged(e.payload).then(() => api.activity(50)).then((activity) => useApp.getState().set({ activity }))
+      .catch((err) => useApp.getState().set({ error: errorText(err) }));
   });
+  const un2 = await listen('agents-changed', () => { void refreshAgents(); });
   await refreshProposals();
-  return un;
+  await refreshAgents();
+  return () => { un(); un2(); };
 }
 
 /** Replaces the canvas board with the file on disk, discarding any derived pending save. */

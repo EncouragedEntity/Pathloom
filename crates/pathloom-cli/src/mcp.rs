@@ -6,7 +6,7 @@
 use crate::cli::SchemaKind;
 use crate::ops::{self, ApiError, ApiResult, StageFilter};
 use crate::schema::schema;
-use pathloom_core::Project;
+use pathloom_core::{Project, SessionRef};
 use rmcp::handler::server::wrapper::Parameters;
 use rmcp::model::{
     CallToolResult, ContentBlock, Implementation, ListResourcesResult, PaginatedRequestParams,
@@ -27,7 +27,7 @@ const GUIDE: &str = include_str!("guide.md");
 struct ListStagesParams {
     /// Filter by computed status: done | active | ready | blocked
     status: Option<String>,
-    /// Filter by assignee: me | ai | both
+    /// Filter by assignee: me | ai | both | ai:<name> | human:<name>
     who: Option<String>,
     /// Only stages that have a card on this board
     board: Option<String>,
@@ -49,6 +49,38 @@ struct KeyParams {
 struct NextParams {
     /// Max tasks (default 10)
     limit: Option<usize>,
+    /// Agent name to plan for (default: you). Your claimed tasks come first; tasks claimed by others are hidden.
+    agent: Option<String>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ClaimParams {
+    /// Task or subtask id, e.g. AUTH-02 or AUTH-02a
+    task_id: String,
+    /// How long the claim lasts, in minutes (default 30, max 480). Claim again to renew.
+    ttl_minutes: Option<u64>,
+    /// Short note about what you are doing
+    note: Option<String>,
+    /// External client session you act from (client, id, url?, title?). Logged with the action.
+    session: Option<SessionRef>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ReleaseParams {
+    /// Task or subtask id
+    task_id: String,
+    /// Release a claim held by another agent. Only when the user asked you to.
+    force: Option<bool>,
+    /// External client session you act from (client, id, url?, title?). Logged with the action.
+    session: Option<SessionRef>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct ActivityParams {
+    /// Max entries (default 20, max 200)
+    limit: Option<usize>,
+    /// Only entries that touch this stage key
+    stage: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -72,6 +104,8 @@ struct ApplyParams {
     spec: Value,
     /// Validate and report only; write nothing
     dry_run: Option<bool>,
+    /// External client session you act from (client, id, url?, title?). Logged with the action.
+    session: Option<SessionRef>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -80,6 +114,8 @@ struct SetTaskParams {
     task_id: String,
     /// true = done, false = not done
     done: bool,
+    /// External client session you act from (client, id, url?, title?). Logged with the action.
+    session: Option<SessionRef>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -88,6 +124,8 @@ struct CommentParams {
     stage: String,
     /// One-line comment text
     text: String,
+    /// External client session you act from (client, id, url?, title?). Logged with the action.
+    session: Option<SessionRef>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -96,6 +134,20 @@ struct LayoutParams {
     board: Option<String>,
     /// Move only the cards of these stage keys; omit to lay out every card
     only_new: Option<Vec<String>>,
+    /// External client session you act from (client, id, url?, title?). Logged with the action.
+    session: Option<SessionRef>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct RegisterParams {
+    /// Display name, up to 40 characters
+    name: Option<String>,
+    /// #rgb or #rrggbb
+    color: Option<String>,
+    /// One emoji (up to 2 characters) or assets/<file>.png|jpg|webp|svg
+    avatar: Option<String>,
+    /// Free label: agent (default), orchestrator, reviewer, ...
+    kind: Option<String>,
 }
 
 #[derive(Clone)]
@@ -119,6 +171,16 @@ impl PathloomServer {
 
     fn guard(&self) -> ApiResult<()> {
         if self.read_only { Err(ApiError::read_only()) } else { Ok(()) }
+    }
+
+    /// Placeholder actor for read-only tools (never logs).
+    fn actor_anon(&self) -> ops::Actor {
+        ops::Actor::new("agent", "mcp")
+    }
+
+    /// Identity for claims and the log: normalized client name (or `--author`), with the optional session.
+    fn actor(&self, ctx: &RequestContext<RoleServer>, session: Option<SessionRef>) -> ApiResult<ops::Actor> {
+        ops::Actor::new(&self.author(ctx), "mcp").with_session(session)
     }
 
     fn author(&self, ctx: &RequestContext<RoleServer>) -> String {
@@ -159,7 +221,7 @@ impl PathloomServer {
     }
 
     #[tool(
-        description = "One stage in full (tasks, comments, depends, status) plus `hash`. Pass the hash in apply.expected to detect concurrent edits.",
+        description = "One stage in full (tasks, comments, depends, status, live `claims`) plus `hash`. Pass the hash in apply.expected to detect concurrent edits.",
         annotations(read_only_hint = true)
     )]
     async fn get_stage(&self, Parameters(a): Parameters<KeyParams>) -> CallToolResult {
@@ -167,14 +229,46 @@ impl PathloomServer {
     }
 
     #[tool(
-        description = "Open tasks you can work on now (stages that are ready or active), sorted by priority, due date, file order.",
+        description = "Open tasks you can work on now (stages that are ready or active), sorted by priority, due date, file order. Tasks you claimed come first (`claimed_by`); tasks claimed by other agents are hidden.",
         annotations(read_only_hint = true)
     )]
-    async fn next(&self, Parameters(a): Parameters<NextParams>) -> CallToolResult {
+    async fn next(&self, Parameters(a): Parameters<NextParams>, ctx: RequestContext<RoleServer>) -> CallToolResult {
         finish((|| {
-            let tasks = self.project()?.next_tasks(a.limit.unwrap_or(10))?;
+            let agent = match a.agent.as_deref() {
+                Some(x) => ops::normalize_agent(x),
+                None => self.actor(&ctx, None)?.name,
+            };
+            let tasks = self.project()?.next_tasks_for(a.limit.unwrap_or(10), Some(&agent))?;
             Ok(json!({"tasks": tasks}))
         })())
+    }
+
+    #[tool(
+        description = "Claim a task before working on it so other agents skip it. Same agent claiming again renews. Fails with CLAIMED (details: task_id, by, expires_at) when someone else holds it. Marking the task done releases the claim.",
+        annotations(idempotent_hint = true)
+    )]
+    async fn claim_task(&self, Parameters(a): Parameters<ClaimParams>, ctx: RequestContext<RoleServer>) -> CallToolResult {
+        finish((|| {
+            self.guard()?;
+            let secs = a.ttl_minutes.unwrap_or(0).saturating_mul(60);
+            ops::claim_task(&self.project()?, &self.actor(&ctx, a.session)?, &a.task_id, secs, a.note.as_deref().unwrap_or(""))
+        })())
+    }
+
+    #[tool(description = "Release your claim on a task without finishing it. force=true takes over another agent's claim: only when the user asks.")]
+    async fn release_task(&self, Parameters(a): Parameters<ReleaseParams>, ctx: RequestContext<RoleServer>) -> CallToolResult {
+        finish((|| {
+            self.guard()?;
+            ops::release_task(&self.project()?, &self.actor(&ctx, a.session)?, &a.task_id, a.force.unwrap_or(false))
+        })())
+    }
+
+    #[tool(
+        description = "Recent actions of agents and humans on this plan (who did what, newest first). Check it to see what others changed. Optional stage filter.",
+        annotations(read_only_hint = true)
+    )]
+    async fn activity(&self, Parameters(a): Parameters<ActivityParams>) -> CallToolResult {
+        finish(self.project().and_then(|p| ops::activity(&p, a.limit.unwrap_or(0), a.stage.as_deref())))
     }
 
     #[tool(
@@ -195,15 +289,17 @@ impl PathloomServer {
                 self.guard()?;
             }
             let spec = ops::parse_spec_value(&a.spec)?;
-            ops::submit(&self.project()?, &spec, &self.author(&ctx), dry, false)
+            let p = self.project()?;
+            let v = ops::submit(&p, &spec, &self.author(&ctx), dry, false)?;
+            Ok(ops::log_submit(&p, &self.actor(&ctx, a.session)?, "apply", &spec, v))
         })())
     }
 
     #[tool(description = "Mark a task or subtask done (true) or not done (false). Returns the stage's new status.")]
-    async fn set_task(&self, Parameters(a): Parameters<SetTaskParams>) -> CallToolResult {
+    async fn set_task(&self, Parameters(a): Parameters<SetTaskParams>, ctx: RequestContext<RoleServer>) -> CallToolResult {
         finish((|| {
             self.guard()?;
-            ops::set_task(&self.project()?, &a.task_id, a.done)
+            ops::set_task(&self.project()?, &self.actor(&ctx, a.session)?, "set_task", &a.task_id, a.done)
         })())
     }
 
@@ -211,16 +307,33 @@ impl PathloomServer {
     async fn add_comment(&self, Parameters(a): Parameters<CommentParams>, ctx: RequestContext<RoleServer>) -> CallToolResult {
         finish((|| {
             self.guard()?;
-            ops::add_comment(&self.project()?, &a.stage, &self.author(&ctx), &a.text)
+            ops::add_comment(&self.project()?, &self.actor(&ctx, a.session)?, &a.stage, &self.author(&ctx), &a.text)
         })())
     }
 
     #[tool(description = "Auto-layout cards on a board, left to right by dependencies. only_new limits which cards move.")]
-    async fn layout_board(&self, Parameters(a): Parameters<LayoutParams>) -> CallToolResult {
+    async fn layout_board(&self, Parameters(a): Parameters<LayoutParams>, ctx: RequestContext<RoleServer>) -> CallToolResult {
         finish((|| {
             self.guard()?;
-            ops::layout(&self.project()?, a.board.as_deref().unwrap_or("roadmap"), &a.only_new.unwrap_or_default())
+            ops::layout(&self.project()?, &self.actor(&ctx, a.session)?, a.board.as_deref().unwrap_or("roadmap"), &a.only_new.unwrap_or_default())
         })())
+    }
+
+    #[tool(
+        description = "Register or update your own display profile (name, color, avatar, kind) shown in the app and in logs. Your id is your caller identity. Call once at session start."
+    )]
+    async fn register_agent(&self, Parameters(a): Parameters<RegisterParams>, ctx: RequestContext<RoleServer>) -> CallToolResult {
+        finish((|| {
+            self.guard()?;
+            let actor = self.actor(&ctx, None)?;
+            let patch = ops::ProfilePatch { name: a.name, color: a.color, avatar: a.avatar, kind: a.kind };
+            ops::set_agent(&self.project()?, &actor, "register_agent", &actor.name, patch)
+        })())
+    }
+
+    #[tool(description = "All agent profiles (id, name, color, avatar, kind).", annotations(read_only_hint = true))]
+    async fn list_agents(&self) -> CallToolResult {
+        finish(self.project().and_then(|p| ops::list_agents(&p)))
     }
 
     #[tool(
@@ -228,7 +341,7 @@ impl PathloomServer {
         annotations(read_only_hint = true)
     )]
     async fn validate(&self) -> CallToolResult {
-        finish(self.project().and_then(|p| ops::validate(&p, false)))
+        finish(self.project().and_then(|p| ops::validate(&p, &self.actor_anon(), false)))
     }
 }
 
@@ -248,7 +361,7 @@ impl ServerHandler for PathloomServer {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().enable_resources().build())
             .with_server_info(Implementation::new("pathloom", env!("CARGO_PKG_VERSION")))
             .with_instructions(
-                "Pathloom project plan. Start with project_info, then next. Read pathloom://guide/workflow for the rules."
+                "Pathloom project plan. Start with project_info, then next; claim_task before working. Read pathloom://guide/workflow for the rules."
                     .to_string(),
             )
     }

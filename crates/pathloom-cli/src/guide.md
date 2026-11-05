@@ -5,7 +5,7 @@ your changes live. Files are the source of truth, so every change is a normal fi
 
 ## Concepts
 - **Stage** = one card of the roadmap: file `plan/stages/<KEY>.md`. Key: `[A-Z][A-Z0-9]{0,7}` (`M0`, `AUTH`).
-  Fields: `title`, `kind` (`stage` | `milestone`), `who` (`me` | `ai` | `both`), `priority` (`low` | `med` | `high`),
+  Fields: `title`, `kind` (`stage` | `milestone`), `who` (`me` | `ai` | `both` | `ai:<name>` | `human:<name>`), `priority` (`low` | `med` | `high`),
   `due`, `branch`, `depends`.
 - **Task** = a checkbox in a stage. IDs are `<KEY>-<NN>` (`AUTH-02`); a subtask adds a letter (`AUTH-02a`).
   A task with subtasks is done when all of them are. Milestones have no tasks.
@@ -16,10 +16,30 @@ your changes live. Files are the source of truth, so every change is a normal fi
   A stage with no tasks is never done.
 - **Board** = a canvas (`plan/boards/<name>.board.json`) with cards (one per stage), frames (phases) and drawings.
 
+## Who and claims
+- `who: ai:<name>` assigns a stage to one named agent (`ai:claude`, `ai:codex`); plain `ai` means any agent.
+  Your name is your MCP client name (shown in `claimed_by` and in `activity`). Prefer stages that are `ai` or `ai:<your name>`.
+- Several agents may work on the same plan. **Claim before you work**: `claim_task {task_id}` (default 30 min,
+  `ttl_minutes` up to 480; claim again to renew). `next` hides tasks claimed by others and lists yours first.
+- When the work is finished, `set_task` done: that releases the claim by itself. If you stop without finishing,
+  call `release_task`. A claim on a task with subtasks covers its subtasks.
+- `CLAIMED` (details: `task_id`, `by`, `expires_at`) means someone else holds the task: pick another one from `next`.
+  **Never steal a claim** (`release_task` with `force`) unless the user explicitly asked you to.
+- Use `activity` (optionally `stage`) to see what others did lately before you touch a stage; every change of
+  yours is logged there automatically.
+
+## Identity and sessions
+- `register_agent {name?, color?, avatar?, kind?}` sets your own display profile (id = your caller name; `name` up to 40 chars, `color` `#rgb`/`#rrggbb`,
+  `avatar` one emoji or `assets/<file>.png`). The app shows it instead of a generated color. You can only register yourself; `list_agents` shows all profiles.
+- If you run inside an external client (an orchestrator, an IDE), pass `session: {client, id, url?, title?}` to `claim_task` and to any other mutating tool.
+  A claim with a session also adds it to the stage's `sessions` history, and every log entry keeps it, so humans can jump back to that session.
+  In `apply`, `stages[].sessions_add: [{client, id, url?, title?}]` records sessions on a stage (deduplicated by client+id, newest 20 kept).
+
 ## Recommended workflow
-1. `project_info` first: boards, counts per status, the top 5 next tasks, whether the project is in review mode.
-2. `next` to find what to do. Do the work, then `set_task` (done=true) and `add_comment` with a short note
-   (what changed, where, what is left).
+1. `project_info` first: `protocol` (`pathloom/1`), `version`, `capabilities` (what this server supports; a `--read-only` server has no mutating ones), boards, counts per status,
+   the top 5 next tasks, `agent_changes` (review mode) and the `agents` profiles. Then `register_agent` once per session (see Identity and sessions).
+2. `next` to find what to do, `claim_task` it, do the work, then `set_task` (done=true; releases the claim)
+   and `add_comment` with a short note (what changed, where, what is left).
 3. To plan or restructure, use `apply` with a spec (see `pathloom://schema/spec`). Try `dry_run: true` first.
    Re-applying the same spec is safe: existing tasks (same title), links, cards and frames are not duplicated.
 4. Before editing a stage someone else may touch, call `get_stage` and pass its `hash` in `expected`
@@ -52,5 +72,5 @@ expected: {M0: "<hash from get_stage>"}
 - Keep titles short; put detail in the stage description (edit the file) or in comments.
 - Comments are authored as you (`agent:<client>`); keep them factual.
 - `agent_changes = review`: `apply` returns `mode: proposed` and changes nothing until a human accepts. That is normal; do not retry.
-- Errors are `{code, message, details}`: `NOT_FOUND`, `CYCLE`, `DUPLICATE_KEY`, `CONFLICT`, `INVALID_SPEC`, `READ_ONLY`, `OUT_OF_PROJECT`.
+- Errors are `{code, message, details}`: `NOT_FOUND`, `CYCLE`, `DUPLICATE_KEY`, `CONFLICT`, `CLAIMED`, `INVALID_SPEC`, `READ_ONLY`, `OUT_OF_PROJECT`.
   A failed `apply` writes nothing.

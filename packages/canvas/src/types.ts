@@ -103,7 +103,8 @@ export interface StageView {
   key: string;
   title: string;
   kind: 'stage' | 'milestone';
-  who: 'me' | 'ai' | 'both';
+  /** `me`, `ai`, `both`, `ai:<name>` or `human:<name>`. */
+  who: string;
   due: string | null;
   priority: 'low' | 'med' | 'high';
   branch: string | null;
@@ -115,6 +116,10 @@ export interface StageView {
   comments: { at: string; author: string; text: string }[];
   status: StageStatus;
   progress: [number, number];
+  /** Live task claims (agent working on a task); a claim on a task covers its subtasks. */
+  claims?: { taskId: string; agent: string; expiresAt: string }[];
+  /** External sessions (other apps) that worked on this stage, oldest first. */
+  sessions?: { client: string; id: string; url?: string | null; title?: string | null }[];
 }
 
 export interface ThemeTokens {

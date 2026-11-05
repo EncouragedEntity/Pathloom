@@ -16,15 +16,15 @@ const paper: ThemeTokens = {
 };
 
 // ---- mock stage store (status per spec section 5) ------------------------------------------
-interface RawStage { kind?: 'milestone'; key: string; title: string; who: 'me' | 'ai' | 'both'; due: string | null; priority: 'low' | 'med' | 'high'; branch: string | null; depends: { id: string; soft: boolean }[]; tasks: Task[] }
+interface RawStage { kind?: 'milestone'; key: string; title: string; who: string; due: string | null; priority: 'low' | 'med' | 'high'; branch: string | null; depends: { id: string; soft: boolean }[]; tasks: Task[] }
 const t = (id: string, title: string, done = false): Task => ({ id, title, done, sub: [] });
 const raw: RawStage[] = [
   { key: 'S0', title: 'Owner: repo and environment', who: 'me', due: 'Nov 6', priority: 'high', branch: null, depends: [], tasks: [t('S0-01', 'Create the GitHub repo', true), t('S0-02', 'Install Rust and Node', true), t('S0-03', 'Ubuntu in WSL for Linux tests', true)] },
-  { key: 'M0', title: 'Core and file format', who: 'ai', due: 'Nov 14', priority: 'high', branch: 'feat/core', depends: [{ id: 'S0', soft: false }], tasks: [t('M0-01', 'Stage file format (.md + frontmatter)', true), t('M0-02', 'Board file format (JSON)', true), t('M0-03', 'Dependency graph and cycles', true), t('M0-04', 'compute_statuses and stage_views')] },
-  { key: 'M1', title: 'Canvas: shapes and arrows', who: 'ai', due: 'Nov 28', priority: 'high', branch: 'feat/canvas', depends: [{ id: 'M0', soft: false }], tasks: [t('M1-01', 'Pan / zoom and grid'), t('M1-02', 'Rectangle, ellipse, diamond'), t('M1-03', 'Pencil (perfect-freehand)'), t('M1-04', 'Arrows with binding'), t('M1-05', 'Undo / redo')] },
-  { key: 'M2', title: 'pathloom CLI', who: 'ai', due: 'Nov 21', priority: 'med', branch: null, depends: [{ id: 'M0', soft: false }], tasks: [t('M2-01', 'pathloom init'), t('M2-02', 'stage add / task done'), t('M2-03', 'pathloom next'), t('M2-04', 'pathloom validate')] },
+  { key: 'M0', title: 'Core and file format', who: 'human:olia', due: 'Nov 14', priority: 'high', branch: 'feat/core', depends: [{ id: 'S0', soft: false }], tasks: [t('M0-01', 'Stage file format (.md + frontmatter)', true), t('M0-02', 'Board file format (JSON)', true), t('M0-03', 'Dependency graph and cycles', true), t('M0-04', 'compute_statuses and stage_views')] },
+  { key: 'M1', title: 'Canvas: shapes and arrows', who: 'ai:claude', due: 'Nov 28', priority: 'high', branch: 'feat/canvas', depends: [{ id: 'M0', soft: false }], tasks: [t('M1-01', 'Pan / zoom and grid'), t('M1-02', 'Rectangle, ellipse, diamond'), t('M1-03', 'Pencil (perfect-freehand)'), t('M1-04', 'Arrows with binding'), t('M1-05', 'Undo / redo')] },
+  { key: 'M2', title: 'pathloom CLI', who: 'ai:codex', due: 'Nov 21', priority: 'med', branch: null, depends: [{ id: 'M0', soft: false }], tasks: [t('M2-01', 'pathloom init'), t('M2-02', 'stage add / task done'), t('M2-03', 'pathloom next'), t('M2-04', 'pathloom validate')] },
   { key: 'M3', title: "Stage cards and links", who: 'ai', due: 'Dec 5', priority: 'high', branch: null, depends: [{ id: 'M1', soft: false }], tasks: [t('M3-01', 'Stage card'), t('M3-02', 'Task IDs inside the card'), t('M3-03', 'Arrow between cards = dependency')] },
-  { key: 'M4', title: 'MCP server and skill', who: 'ai', due: 'Dec 10', priority: 'high', branch: null, depends: [{ id: 'M2', soft: false }, { id: 'M3', soft: true }], tasks: [t('M4-01', 'rmcp stdio server'), t('M4-02', 'Batch apply spec'), t('M4-03', 'Skill for Claude Code'), t('M4-04', 'Live reload in the app')] },
+  { key: 'M4', title: 'MCP server and skill', who: 'ai:claude-code', due: 'Dec 10', priority: 'high', branch: null, depends: [{ id: 'M2', soft: false }, { id: 'M3', soft: true }], tasks: [t('M4-01', 'rmcp stdio server'), t('M4-02', 'Batch apply spec'), t('M4-03', 'Skill for Claude Code'), t('M4-04', 'Live reload in the app')] },
   { kind: 'milestone', key: 'G0', title: 'MVP demo', who: 'me', due: 'Dec 12', priority: 'med', branch: null, depends: [{ id: 'M3', soft: false }, { id: 'M4', soft: false }], tasks: [] },
   { key: 'M5', title: 'Installers and CI', who: 'both', due: 'Dec 19', priority: 'med', branch: null, depends: [{ id: 'M4', soft: false }, { id: 'G0', soft: false }], tasks: [t('M5-01', 'Make the repo public'), t('M5-02', 'GitHub Actions: Win / macOS / Linux'), t('M5-03', 'Test on a friend\'s Linux box')] },
   { key: 'M6', title: 'Public release 0.1', who: 'me', due: 'Dec 26', priority: 'med', branch: null, depends: [{ id: 'M5', soft: false }], tasks: [t('M6-01', 'README and screenshots'), t('M6-02', 'FUNDING.yml'), t('M6-03', 'Announcement post')] },
@@ -32,6 +32,9 @@ const raw: RawStage[] = [
 
 const rawInit: RawStage[] = structuredClone(raw);
 const taskDone = (x: Task): boolean => (x.sub.length ? x.sub.every(taskDone) : x.done);
+// task id -> agent; shown as StageView.claims while claimsOn
+let claimsOn = true;
+const claimMap = new Map<string, string>([['M1-02', 'claude'], ['M2-03', 'codex'], ['M4-02', 'claude-code']]);
 function views(): StageView[] {
   const status = new Map<string, StageStatus>();
   const compute = (k: string): StageStatus => {
@@ -49,6 +52,7 @@ function views(): StageView[] {
   return raw.map((s) => ({
     key: s.key, title: s.title, kind: s.kind ?? 'stage', who: s.who, due: s.due, priority: s.priority, branch: s.branch, pr: null, tags: [],
     depends: s.depends, description: '', tasks: s.tasks, comments: [], status: compute(s.key),
+    claims: claimsOn ? s.tasks.filter((x) => claimMap.has(x.id)).map((x) => ({ taskId: x.id, agent: claimMap.get(x.id)!, expiresAt: '2099-01-01T00:00:00Z' })) : [],
     progress: [s.tasks.filter(taskDone).length, s.tasks.length],
   }));
 }
@@ -158,6 +162,8 @@ const actions: [string, string, () => void][] = [
   ['pan', 'Pan test', () => panTest()],
   ['hl', 'Highlight', () => { const ks = raw.map((r) => r.key).sort(() => Math.random() - 0.5).slice(0, 2); editor.highlightStages(ks); note = 'highlight ' + ks.join(','); refreshInfo(); }],
   ['ghosts', 'Ghosts', () => ghostDemo()],
+  ['claims', 'Claims: on', () => { claimsOn = !claimsOn; editor.setStages(views()); setLabel('claims', `Claims: ${claimsOn ? 'on' : 'off'}`); }],
+  ['profiles', 'Profiles: off', () => { void toggleProfiles(); }],
   ['reload', 'Reload keepCamera', () => { editor.setBoard(editor.getBoard(), { keepCamera: true }); note = 'reloaded keepCamera'; refreshInfo(); }],
 ];
 bar.innerHTML = tools.map(([k, l, s]) => `<button data-tool="${k}" title="${l}">${l}<kbd>${s}</kbd></button>`).join('') + '<span class="sep"></span>' +
@@ -170,6 +176,24 @@ bar.addEventListener('click', (e) => {
 });
 function setLabel(k: string, text: string) { const b = bar.querySelector(`button[data-act="${k}"]`); if (b) b.textContent = text; }
 host.onToolChange('select');
+
+let profilesOn = false;
+/** Sample agent profiles: emoji avatar + renamed (claude), generated image avatar via object URL (codex), colour override (claude-code). */
+async function toggleProfiles() {
+  profilesOn = !profilesOn;
+  if (profilesOn && !assets.has('assets/avatar-codex.png')) {
+    const c = document.createElement('canvas'); c.width = c.height = 48;
+    const g = c.getContext('2d')!; g.fillStyle = '#e8b04a'; g.fillRect(0, 0, 48, 48); g.fillStyle = '#0f0d16'; g.fillRect(0, 0, 24, 24); g.fillRect(24, 24, 24, 24);
+    const blob = await new Promise<Blob>((r) => c.toBlob((b) => r(b!), 'image/png'));
+    assets.set('assets/avatar-codex.png', URL.createObjectURL(blob));
+  }
+  editor.setAgentProfiles(profilesOn ? [
+    { id: 'claude', name: 'Claude Opus', avatar: '✦', color: '#d97757' },
+    { id: 'codex', avatar: 'assets/avatar-codex.png' },
+    { id: 'claude-code', color: 'nope' },
+  ] : []);
+  setLabel('profiles', `Profiles: ${profilesOn ? 'on' : 'off'}`);
+}
 
 let ghostOn = false;
 /** Toggle two proposed stages: G1 depends on two real cards, G2 on G1. */
@@ -263,7 +287,12 @@ function loadPreset(kind: 'shapes' | 'cards' | 'both' | 'phases') {
     return;
   }
   const els: Element[] = [];
-  if (kind !== 'shapes') { els.push(...cardPreset()); editor.setStages(views()); }
+  if (kind !== 'shapes') {
+    els.push(...cardPreset());
+    const nc = Number(new URLSearchParams(location.search).get('claims') ?? 0);
+    for (let i = 0; i < nc; i++) claimMap.set(`C${i}-1`, ['claude', 'codex', 'cursor', 'gemini-cli'][i % 4]);
+    editor.setStages(views());
+  }
   if (kind !== 'cards') els.push(...shapePreset());
   editor.setBoard({ format: 'pathloom.board/1', title: 'Stress ' + kind, style, elements: els });
   note = `preset ${kind}: ${els.length} elements`;
@@ -310,6 +339,8 @@ async function runBench(kind: 'shapes' | 'cards' | 'both', st: 'clean' | 'sketch
 (window as unknown as { __runBench: typeof runBench }).__runBench = runBench;
 {
   const q = new URLSearchParams(location.search), bk = q.get('bench'), pk = q.get('preset');
+  const nc = Number(q.get('claims') ?? 0);
+  if (nc > 0) { claimsOn = true; claimMap.clear(); }
   if (q.get('theme') === 'paper') { applyTheme(paper); setLabel('theme', 'Theme: Paper'); }
   if (bk === 'shapes' || bk === 'cards' || bk === 'both') void runBench(bk, q.get('style') === 'sketch' ? 'sketch' : 'clean');
   else if (pk === 'shapes' || pk === 'cards' || pk === 'both' || pk === 'phases') {

@@ -6,9 +6,10 @@ mod ops;
 mod schema;
 
 use clap::Parser;
-use cli::{BoardCmd, Cli, Cmd, ProposalCmd, StageCmd, TaskCmd};
+use cli::{AgentCmd, BoardCmd, Cli, Cmd, ProposalCmd, SkillCmd, StageCmd, TaskCmd};
 use ops::{ApiError, ApiResult};
-use pathloom_core::{ApplySpec, DepSpec, Place, Project, StageSpec};
+use pathloom_core::events::{Event, EventWatcher};
+use pathloom_core::{ApplySpec, DepSpec, Place, Project, SessionRef, StageSpec};
 use serde_json::{Value, json};
 use std::io::Read;
 use std::process::ExitCode;
@@ -32,8 +33,11 @@ fn open(cli: &Cli) -> ApiResult<Project> {
     ops::open_project(&ops::locate_root(cli.project.as_deref())?)
 }
 
-/// Print `json` (with --json) or the human text.
+/// Print `json` (with --json) or the human text. A failed activity-log write is a warning on stderr.
 fn emit(cli: &Cli, json: &Value, human: impl FnOnce() -> String) {
+    if let Some(w) = json["log_warning"].as_str() {
+        eprintln!("warning: {w}");
+    }
     if cli.json {
         println!("{json}");
     } else {
@@ -79,6 +83,9 @@ fn fmt_task(t: &Value) -> String {
     if let Some(d) = t["due"].as_str() {
         meta.push(format!("due {d}"));
     }
+    if let Some(by) = t["claimed_by"].as_str() {
+        meta.push(format!("claimed by {by}"));
+    }
     format!("{:<9} {}  ({})", s(t, "task_id"), s(t, "title"), meta.join(" · "))
 }
 
@@ -101,8 +108,9 @@ fn read_spec_text(file: &str) -> ApiResult<String> {
 
 #[allow(clippy::too_many_lines)]
 fn run(cli: &Cli) -> ApiResult<ExitCode> {
+    let actor = ops::Actor::new(&cli.author, "cli");
     match &cli.command {
-        Cmd::Init { plan_dir, name } => {
+        Cmd::Init { plan_dir, name, agents_skill } => {
             let root = match &cli.project {
                 Some(p) => std::path::absolute(p),
                 None => std::env::current_dir(),
@@ -112,7 +120,11 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
                 root.file_name().map_or_else(|| "project".into(), |n| n.to_string_lossy().into_owned())
             });
             let p = Project::init_with(&root, &name, plan_dir)?;
-            let j = json!({"name": name, "root": p.root.to_string_lossy(), "plan_dir": plan_dir});
+            let mut j = json!({"name": name, "root": p.root.to_string_lossy(), "plan_dir": plan_dir});
+            if *agents_skill {
+                let path = ops::install_skill(&p.root, std::path::Path::new(".agents/skills"), false)?;
+                j["skill"] = json!(path.to_string_lossy());
+            }
             emit(cli, &j, || format!("Initialized Pathloom project `{name}` in {}", p.root.display()));
         }
         Cmd::Board(BoardCmd::Create { name, title }) => {
@@ -140,6 +152,7 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
             });
             spec.board = Some(board.clone());
             let v = ops::submit(&p, &spec, &cli.author, false, *direct)?;
+            let v = ops::log_submit(&p, &actor, "stage add", &spec, v);
             emit(cli, &v, || fmt_submit(&v));
         }
         Cmd::Stage(StageCmd::Show { key }) => {
@@ -210,6 +223,7 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
                 return Err(pathloom_core::Error::NotFound(format!("stage {key}")).into());
             }
             let mut v = ops::submit(&p, &spec, &cli.author, false, *direct)?;
+            v = ops::log_submit(&p, &actor, "task add", &spec, v);
             if s(&v, "mode") == "applied"
                 && let Some(t) = p.load_stage(key)?.tasks.iter().rev().find(|t| &t.title == title)
             {
@@ -222,7 +236,7 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
         }
         Cmd::Task(TaskCmd::Done { task_id }) | Cmd::Task(TaskCmd::Undo { task_id }) => {
             let done = matches!(cli.command, Cmd::Task(TaskCmd::Done { .. }));
-            let v = ops::set_task(&open(cli)?, task_id, done)?;
+            let v = ops::set_task(&open(cli)?, &actor, if done { "task done" } else { "task undo" }, task_id, done)?;
             emit(cli, &v, || {
                 let st = &v["stage"];
                 format!(
@@ -235,22 +249,65 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
                 )
             });
         }
+        Cmd::Task(TaskCmd::Claim { task_id, ttl, note, session_client, session_id, session_url, session_title }) => {
+            let session = session_client.as_ref().zip(session_id.as_ref()).map(|(c, i)| SessionRef {
+                client: c.clone(),
+                id: i.clone(),
+                url: session_url.clone(),
+                title: session_title.clone(),
+            });
+            let actor = actor.clone().with_session(session)?;
+            let v = ops::claim_task(&open(cli)?, &actor, task_id, ops::parse_ttl(ttl)?, note)?;
+            emit(cli, &v, || format!("Claimed {task_id} for {} until {}", actor.name, s(&v, "expires_at")));
+        }
+        Cmd::Task(TaskCmd::Release { task_id, force }) => {
+            let v = ops::release_task(&open(cli)?, &actor, task_id, *force)?;
+            emit(cli, &v, || format!("Released {task_id}"));
+        }
+        Cmd::Claims => {
+            let v = ops::claims(&open(cli)?)?;
+            emit(cli, &v, || {
+                let rows: Vec<String> = v["claims"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|c| format!("{:<9} {:<16} until {}  {}", s(c, "task_id"), s(c, "agent"), s(c, "expires_at"), s(c, "note")))
+                    .collect();
+                if rows.is_empty() { "No active claims.".into() } else { rows.join("\n") }
+            });
+        }
+        Cmd::Log { limit, stage } => {
+            let v = ops::activity(&open(cli)?, *limit, stage.as_deref())?;
+            emit(cli, &v, || {
+                let rows: Vec<String> = v["entries"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|e| format!("{}  {:<14} {:<4} {:<14} {}", s(e, "at"), s(e, "author"), s(e, "source"), s(e, "action"), s(e, "summary")))
+                    .collect();
+                if rows.is_empty() { "No activity yet.".into() } else { rows.join("\n") }
+            });
+        }
         Cmd::Link { from, to, soft, direct } => {
             let spec = ApplySpec { links: vec![pathloom_core::LinkSpec { from: from.clone(), to: to.clone(), soft: *soft }], ..Default::default() };
-            let v = ops::submit(&open(cli)?, &spec, &cli.author, false, *direct)?;
+            let p = open(cli)?;
+            let v = ops::submit(&p, &spec, &cli.author, false, *direct)?;
+            let v = ops::log_submit(&p, &actor, "link", &spec, v);
             emit(cli, &v, || fmt_submit(&v));
         }
         Cmd::Unlink { from, to, direct } => {
             let spec = ApplySpec { unlinks: vec![pathloom_core::UnlinkSpec { from: from.clone(), to: to.clone() }], ..Default::default() };
-            let v = ops::submit(&open(cli)?, &spec, &cli.author, false, *direct)?;
+            let p = open(cli)?;
+            let v = ops::submit(&p, &spec, &cli.author, false, *direct)?;
+            let v = ops::log_submit(&p, &actor, "unlink", &spec, v);
             emit(cli, &v, || fmt_submit(&v));
         }
         Cmd::Comment { key, text } => {
-            let v = ops::add_comment(&open(cli)?, key, &cli.author, text)?;
+            let v = ops::add_comment(&open(cli)?, &actor, key, &cli.author, text)?;
             emit(cli, &v, || format!("Comment added to {key}"));
         }
         Cmd::Next { limit } => {
-            let tasks = open(cli)?.next_tasks(*limit)?;
+            let tasks = open(cli)?.next_tasks_for(*limit, Some(&actor.name))?;
             let v = json!({"tasks": tasks});
             emit(cli, &v, || {
                 if tasks.is_empty() {
@@ -263,14 +320,15 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
             let p = open(cli)?;
             let spec = Project::parse_spec(&read_spec_text(file)?)?;
             let v = ops::submit(&p, &spec, &cli.author, *dry_run, *direct)?;
+            let v = ops::log_submit(&p, &actor, "apply", &spec, v);
             emit(cli, &v, || fmt_submit(&v));
         }
         Cmd::Layout { board, only_new } => {
-            let v = ops::layout(&open(cli)?, board, only_new)?;
+            let v = ops::layout(&open(cli)?, &actor, board, only_new)?;
             emit(cli, &v, || format!("Laid out {} cards on board {board}", v["cards"].as_array().map_or(0, Vec::len)));
         }
         Cmd::Validate { fix } => {
-            let v = ops::validate(&open(cli)?, *fix)?;
+            let v = ops::validate(&open(cli)?, &actor, *fix)?;
             emit(cli, &v, || {
                 let mut o: Vec<String> = list(&v, "fixed").into_iter().map(|f| format!("fixed: {f}")).collect();
                 for i in v["issues"].as_array().into_iter().flatten() {
@@ -312,14 +370,70 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
                 }
                 ProposalCmd::Accept { id } => {
                     let r = p.accept_proposal(id)?;
-                    let v = json!({"mode": "applied", "report": r});
+                    let stages: Vec<String> = r.created.iter().chain(&r.updated).cloned().collect();
+                    let e = ops::entry("proposals accept", format!("accepted proposal {id}"), stages, vec![], r.files.clone());
+                    let v = ops::log(&p, &actor, e, json!({"mode": "applied", "report": r}));
                     emit(cli, &v, || fmt_submit(&v));
                 }
                 ProposalCmd::Reject { id } => {
                     p.reject_proposal(id)?;
-                    emit(cli, &json!({"rejected": id}), || format!("Rejected proposal {id}"));
+                    let e = ops::entry("proposals reject", format!("rejected proposal {id}"), vec![], vec![], vec![]);
+                    let v = ops::log(&p, &actor, e, json!({"rejected": id}));
+                    emit(cli, &v, || format!("Rejected proposal {id}"));
                 }
             }
+        }
+        Cmd::Info => {
+            let v = ops::project_info(&open(cli)?, false)?;
+            emit(cli, &v, || {
+                let counts = &v["stages"];
+                format!(
+                    "{} ({})\nprotocol: {} · pathloom {}\ncapabilities: {}\nagent_changes: {}\nstages: {} total · {} done · {} active · {} ready · {} blocked\nagents: {}",
+                    s(&v, "name"),
+                    s(&v, "root"),
+                    s(&v, "protocol"),
+                    s(&v, "version"),
+                    list(&v, "capabilities").join(", "),
+                    s(&v, "agent_changes"),
+                    counts["total"],
+                    counts["done"],
+                    counts["active"],
+                    counts["ready"],
+                    counts["blocked"],
+                    v["agents"].as_array().map_or(0, Vec::len),
+                )
+            });
+        }
+        Cmd::Agent(AgentCmd::Set { id, name, color, avatar, kind }) => {
+            let patch = ops::ProfilePatch { name: name.clone(), color: color.clone(), avatar: avatar.clone(), kind: kind.clone() };
+            let v = ops::set_agent(&open(cli)?, &actor, "agent set", id, patch)?;
+            emit(cli, &v, || format!("Saved profile {id}"));
+        }
+        Cmd::Agent(AgentCmd::List) => {
+            let v = ops::list_agents(&open(cli)?)?;
+            emit(cli, &v, || {
+                let rows: Vec<String> = v["agents"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|a| format!("{:<16} {:<20} {:<8} {:<4} {}", s(a, "id"), s(a, "name"), s(a, "color"), s(a, "avatar"), s(a, "kind")))
+                    .collect();
+                if rows.is_empty() { "No agent profiles.".into() } else { rows.join("\n") }
+            });
+        }
+        Cmd::Agent(AgentCmd::Remove { id }) => {
+            let v = ops::remove_agent(&open(cli)?, &actor, id)?;
+            emit(cli, &v, || format!("Removed profile {id}"));
+        }
+        Cmd::Watch { since } => {
+            let p = open(cli)?;
+            let since = since.as_deref().map(ops::parse_since).transpose()?;
+            watch(&p, cli.json, since.as_deref())?;
+        }
+        Cmd::Skill(SkillCmd::Install { dir, force }) => {
+            let root = ops::locate_root(cli.project.as_deref())?;
+            let path = ops::install_skill(&root, dir, *force)?;
+            emit(cli, &json!({"path": path.to_string_lossy()}), || format!("Wrote {}", path.display()));
         }
         Cmd::Mcp { read_only } => {
             let root = ops::locate_root(cli.project.as_deref())?;
@@ -329,4 +443,35 @@ fn run(cli: &Cli) -> ApiResult<ExitCode> {
         }
     }
     Ok(ExitCode::SUCCESS)
+}
+
+/// Print one event (JSON line or human text) and flush; `false` when stdout is gone.
+fn print_event(e: &Event, json: bool) -> bool {
+    use std::io::Write;
+    let mut out = std::io::stdout().lock();
+    let line = if json { e.to_json_line() } else { e.to_string() };
+    writeln!(out, "{line}").and_then(|()| out.flush()).is_ok()
+}
+
+/// `pathloom watch`: `hello`, the log backlog since `since`, then live events until killed.
+fn watch(p: &Project, json: bool, since: Option<&str>) -> ApiResult<()> {
+    // Start first so nothing that happens while we print the backlog is lost.
+    let w = EventWatcher::start(p)?;
+    if !print_event(&Event::hello(), json) {
+        return Ok(());
+    }
+    if let Some(since) = since {
+        for entry in ops::entries_since(p, since)? {
+            if !print_event(&Event::Activity { entry }, json) {
+                return Ok(());
+            }
+        }
+    }
+    loop {
+        if let Some(e) = w.recv_timeout(std::time::Duration::from_secs(1))
+            && !print_event(&e, json)
+        {
+            return Ok(());
+        }
+    }
 }

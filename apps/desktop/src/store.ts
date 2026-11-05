@@ -1,7 +1,8 @@
 import { create } from 'zustand';
-import type { Board, Editor, StageView, Tool } from '@pathloom/canvas';
+import type { AgentProfile, Board, Editor, StageView, Tool } from '@pathloom/canvas';
 import { api, errorText, type ProjectSnapshot } from './api';
 import type { Proposal } from './agentSync';
+import type { LogEntry } from './agents';
 import { parseCustomTheme, type AppTheme, type ThemeId } from './theme';
 
 type SaveState = { kind: 'saved' } | { kind: 'saving' } | { kind: 'error'; message: string };
@@ -29,6 +30,8 @@ interface AppStore {
   exec: boolean;
   settingsTab: 'general' | 'keys' | 'agents' | null;
   proposals: Proposal[];
+  activity: LogEntry[];
+  agents: AgentProfile[];
   agentChange: { group: number; stages: string[]; boards: string[]; at: number } | null;
   boardConflict: boolean;
   dropPendingSave(): void;
@@ -103,6 +106,8 @@ export const useApp = create<AppStore>((set, get) => ({
   exec: false,
   settingsTab: null,
   proposals: [],
+  activity: [],
+  agents: [],
   agentChange: null,
   boardConflict: false,
 

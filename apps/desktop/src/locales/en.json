@@ -104,7 +104,9 @@
     "imageBroken": "Image unavailable",
     "minimap": "Minimap",
     "ghostBadge": "Proposed",
-    "milestoneInputs": "{done} of {total} inputs"
+    "milestoneInputs": "{done} of {total} inputs",
+    "claimedBy": "{agent} is on it",
+    "working": "working"
   },
   "common": {
     "undo": "Undo",
@@ -261,5 +263,30 @@
     "boards": "Boards",
     "actions": "Commands",
     "nextTheme": "Next theme"
+  },
+  "agentsUi": {
+    "other": "Other… (ai:name or human:name)",
+    "release": "Free the task taken by {{agent}}",
+    "anyone": "Anyone",
+    "claimed": "Taken by",
+    "workingNow": "Working right now",
+    "nobody": "No agent has taken a task.",
+    "activity": "Agent activity",
+    "noActivity": "No agent actions yet."
+  },
+  "time": {
+    "now": "just now",
+    "min_one": "{{count}} min ago",
+    "min_other": "{{count}} min ago",
+    "hour_one": "{{count}} h ago",
+    "hour_other": "{{count}} h ago",
+    "day_one": "{{count}} day ago",
+    "day_other": "{{count}} days ago"
+  },
+  "sessions": {
+    "title": "Sessions",
+    "copy": "Copy session id",
+    "open": "Open session",
+    "confirm": "Open this link in its app?\n{{url}}"
   }
 }

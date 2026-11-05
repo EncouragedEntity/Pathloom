@@ -92,7 +92,11 @@ Other MCP clients (Cursor, etc.) use the same server: `{"command": "pathloom", "
 | `next` | Tasks that can be done right now, by priority and due date. |
 | `apply` | Create or update many stages, tasks, dependencies, frames and comments in one transactional call. |
 | `set_task`, `add_comment` | Track progress and leave notes for you. |
+| `claim_task`, `release_task` | Take a task so other agents don't work on the same thing (expires after 30 min unless renewed). |
+| `activity` | What other agents and you did recently. |
 | `layout_board`, `validate` | Tidy the board, check the plan for problems. |
+
+**Several agents at once.** Stages can be assigned to a named agent (`who: ai:claude`, `ai:codex`) or person (`human:olia`) — each gets its own colour. An agent claims a task before working on it; the card shows who is on it, and other agents skip it. **Overview** shows who is working right now and a feed of agent activity (`.pathloom/log/agent.jsonl`).
 
 Prefer to approve changes first? Switch **Settings → AI agents → Ask me first**. Agent changes then arrive as proposals you accept or reject.
 

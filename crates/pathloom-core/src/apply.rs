@@ -107,6 +107,9 @@ pub struct StageSpec {
     #[serde(deserialize_with = "lenient_vec", skip_serializing_if = "Vec::is_empty")]
     #[schemars(with = "Vec<String>")]
     pub tasks_undone: Vec<String>,
+    /// External client sessions to record on the stage (dedup by client+id; at most 20 are kept).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub sessions_add: Vec<crate::session::SessionRef>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub place: Option<Place>,
 }
@@ -244,6 +247,11 @@ impl Project {
         let (report, files) = self.plan_apply(spec, opts)?;
         if !opts.dry_run {
             commit(&files)?;
+            if spec.stages.iter().any(|s| !s.tasks_done.is_empty()) {
+                let touched: Vec<Stage> =
+                    report.created.iter().chain(&report.updated).filter_map(|k| self.load_stage(k).ok()).collect();
+                self.release_done_claims(&touched);
+            }
         }
         Ok(report)
     }
@@ -312,8 +320,8 @@ impl Project {
             if let Some(k) = ss.kind {
                 st.kind = k;
             }
-            if let Some(w) = ss.who {
-                st.who = w;
+            if let Some(w) = &ss.who {
+                st.who = w.clone();
             }
             if let Some(p) = ss.priority {
                 st.priority = p;
@@ -355,6 +363,9 @@ impl Project {
             }
             for id in &ss.tasks_undone {
                 mark_done(st, id, false)?;
+            }
+            for s in &ss.sessions_add {
+                crate::session::push_session(&mut st.sessions, s.clone().normalize()?);
             }
         }
         let has = |idx: &HashMap<String, usize>, k: &str| -> Result<()> {

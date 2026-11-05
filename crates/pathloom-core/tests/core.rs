@@ -129,7 +129,7 @@ fn init_open_find() {
     let (d, p) = project();
     assert_eq!(p.config.plan_dir, "plan");
     let gi = std::fs::read_to_string(d.path().join(".pathloom/.gitignore")).unwrap();
-    assert_eq!(gi, "cache/\nproposals/\nlog/\n");
+    assert_eq!(gi, "cache/\nproposals/\nlog/\nclaims.json\nclaims.lock\n");
     assert!(p.plan_dir().join("stages").is_dir());
     let b = p.load_board("roadmap").unwrap();
     assert_eq!((b.title.as_str(), b.style.as_str(), b.elements.len()), ("Roadmap", "clean", 0));
@@ -325,9 +325,9 @@ fn update_meta_partial_and_clear() {
     let (_d, p) = project();
     p.create_stage("Meta", Some("ME")).unwrap();
     let s = p
-        .update_meta("ME", StageMeta { who: Some(Who::Me), priority: Some(Priority::High), due: Some("2026-12-01".into()), branch: Some("feat/x".into()), ..Default::default() })
+        .update_meta("ME", StageMeta { who: Some(Who::me()), priority: Some(Priority::High), due: Some("2026-12-01".into()), branch: Some("feat/x".into()), ..Default::default() })
         .unwrap();
-    assert_eq!((s.who, s.priority, s.due.as_deref(), s.branch.as_deref()), (Who::Me, Priority::High, Some("2026-12-01"), Some("feat/x")));
+    assert_eq!((s.who, s.priority, s.due.as_deref(), s.branch.as_deref()), (Who::me(), Priority::High, Some("2026-12-01"), Some("feat/x")));
     let s = p.update_meta("ME", StageMeta { due: Some(String::new()), ..Default::default() }).unwrap();
     assert_eq!(s.due, None);
     assert_eq!(s.branch.as_deref(), Some("feat/x"));

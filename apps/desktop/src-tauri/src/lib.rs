@@ -7,7 +7,8 @@ mod watch;
 use std::path::Path;
 use std::sync::{LazyLock, Mutex};
 
-use pathloom_core::{AgentChanges, ApplyReport, Board, Project, Proposal, StageMeta, StageView, Task};
+use pathloom_core::{AgentChanges, AgentProfile, ApplyReport, Board, Claim, LogEntry, Project, Proposal, StageMeta, StageView, Task};
+use tauri_plugin_opener::OpenerExt;
 use serde::Serialize;
 use tauri::{AppHandle, Manager, State};
 
@@ -41,7 +42,7 @@ fn with_project<T>(
 }
 
 fn views(p: &Project) -> pathloom_core::Result<Vec<StageView>> {
-    Ok(pathloom_core::stage_views(&p.load_stages()?))
+    p.stage_views_live()
 }
 
 fn snapshot(p: &Project) -> pathloom_core::Result<ProjectSnapshot> {
@@ -228,8 +229,67 @@ fn subtask_add(state: State<'_, AppState>, task_id: String, title: String) -> Cm
 #[tauri::command]
 fn agent_undo(state: State<'_, AppState>, group: u64) -> CmdResult<Vec<StageView>> {
     let touched = SNAPSHOT.lock().map_err(|_| "internal state poisoned".to_string())?.revert(group).map_err(|e| e.to_string())?;
-    let _ = touched;
-    with_project(&state, views)
+    with_project(&state, |p| {
+        let files = touched.iter().filter_map(|f| f.strip_prefix(&p.root).ok()).map(|f| f.to_string_lossy().replace('\\', "/")).collect();
+        log_app(p, "undo", "undid external changes", vec![], files);
+        views(p)
+    })
+}
+
+/// Records an action done in the app in the activity log. Logging never fails the action.
+fn log_app(p: &Project, action: &str, summary: &str, stages: Vec<String>, files: Vec<String>) {
+    let entry = LogEntry {
+        at: pathloom_core::now_rfc3339(),
+        author: "me".into(),
+        source: "app".into(),
+        action: action.into(),
+        summary: summary.into(),
+        stages,
+        tasks: vec![],
+        files,
+        ..Default::default()
+    };
+    let _ = p.log_action(&entry);
+}
+
+#[tauri::command]
+fn activity(state: State<'_, AppState>, limit: usize, stage: Option<String>) -> CmdResult<Vec<LogEntry>> {
+    with_project(&state, |p| p.read_log(limit.min(500), stage.as_deref()))
+}
+
+#[tauri::command]
+fn agents_list(state: State<'_, AppState>) -> CmdResult<Vec<AgentProfile>> {
+    with_project(&state, |p| p.agents())
+}
+
+/// Opens an external session link (http/https or an app's own scheme) after the UI asked the user.
+/// Never opens javascript:, data:, file: or anything without a scheme.
+#[tauri::command]
+fn open_url(app: AppHandle, url: String) -> CmdResult<()> {
+    let scheme = url.split_once("://").map(|(s, _)| s.to_ascii_lowercase()).ok_or("not a URL")?;
+    let valid_scheme = !scheme.is_empty()
+        && scheme.chars().next().is_some_and(|c| c.is_ascii_lowercase())
+        && scheme.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '+' | '.' | '-'));
+    if !valid_scheme || matches!(scheme.as_str(), "javascript" | "data" | "file" | "vbscript") || url.len() > 2048 {
+        return Err("this link type can't be opened".into());
+    }
+    app.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn claims_list(state: State<'_, AppState>) -> CmdResult<Vec<Claim>> {
+    with_project(&state, |p| p.claims())
+}
+
+/// The owner frees a task an agent has claimed (always forced: the human decides).
+#[tauri::command]
+fn claim_release(state: State<'_, AppState>, task_id: String) -> CmdResult<Vec<StageView>> {
+    with_project(&state, |p| {
+        p.release_task(&task_id, "me", true)?;
+        let key = task_id.split('-').next().unwrap_or_default().to_string();
+        log_app(p, "release_task", &format!("released {task_id}"), vec![key], vec![]);
+        views(p)
+    })
 }
 
 /// Max size of one pasted/dropped image.
@@ -379,12 +439,21 @@ fn proposals_list(state: State<'_, AppState>) -> CmdResult<Vec<Proposal>> {
 
 #[tauri::command]
 fn proposal_accept(state: State<'_, AppState>, id: String) -> CmdResult<ApplyReport> {
-    with_project(&state, |p| p.accept_proposal(&id))
+    with_project(&state, |p| {
+        let report = p.accept_proposal(&id)?;
+        let stages = report.created.iter().chain(&report.updated).cloned().collect();
+        log_app(p, "accept_proposal", &format!("accepted proposal {id}"), stages, report.files.clone());
+        Ok(report)
+    })
 }
 
 #[tauri::command]
 fn proposal_reject(state: State<'_, AppState>, id: String) -> CmdResult<()> {
-    with_project(&state, |p| p.reject_proposal(&id))
+    with_project(&state, |p| {
+        p.reject_proposal(&id)?;
+        log_app(p, "reject_proposal", &format!("rejected proposal {id}"), vec![], vec![]);
+        Ok(())
+    })
 }
 
 #[tauri::command]
@@ -407,6 +476,7 @@ fn stage_unlink(state: State<'_, AppState>, from: String, to: String) -> CmdResu
 pub fn run() {
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .register_uri_scheme_protocol("plasset", |ctx, request| serve_asset(ctx.app_handle(), request.uri().path()))
         .manage(AppState::default())
         .invoke_handler(tauri::generate_handler![
@@ -424,6 +494,11 @@ pub fn run() {
             task_add,
             stage_rename,
             agent_undo,
+            activity,
+            claims_list,
+            agents_list,
+            open_url,
+            claim_release,
             asset_save,
             themes_list,
             agent_setup,

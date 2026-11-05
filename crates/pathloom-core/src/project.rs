@@ -81,7 +81,7 @@ impl Project {
         };
         let text = toml::to_string(&config).map_err(|e| parse_err(&cfg_path, e))?;
         write_atomic(&cfg_path, text.as_bytes())?;
-        write_atomic(&root.join(".pathloom/.gitignore"), b"cache/\nproposals/\nlog/\n")?;
+        write_atomic(&root.join(".pathloom/.gitignore"), b"cache/\nproposals/\nlog/\nclaims.json\nclaims.lock\n")?;
         let p = Project { root: root.to_path_buf(), config };
         std::fs::create_dir_all(p.plan_dir().join("stages"))?;
         if !p.board_path("roadmap").exists() {
@@ -345,9 +345,14 @@ impl Project {
         })
     }
 
+    /// Marking a task done also releases the claims on it and on its subtasks.
     pub fn set_task_done(&self, task_id: &str, done: bool) -> Result<Stage> {
         let key = task_id.split('-').next().unwrap_or("");
-        self.edit_stage(key, |s| mark_done(s, task_id, done))
+        let s = self.edit_stage(key, |s| mark_done(s, task_id, done))?;
+        if done {
+            self.release_done_claims(std::slice::from_ref(&s));
+        }
+        Ok(s)
     }
 
     pub fn rename_task(&self, task_id: &str, title: &str) -> Result<Stage> {

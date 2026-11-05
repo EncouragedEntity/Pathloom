@@ -1,6 +1,8 @@
 // Typed wrappers over Tauri commands (docs/m1-contracts.md §3).
 import { invoke } from '@tauri-apps/api/core';
 import type { Board, StageView } from '@pathloom/canvas';
+import type { LogEntry } from './agents';
+import type { AgentProfile } from '@pathloom/canvas';
 
 export interface ProjectSnapshot {
   root: string;
@@ -46,6 +48,10 @@ export const api = {
   subtaskAdd: (taskId: string, title: string) => invoke<StageView[]>('subtask_add', { taskId, title }),
   agentSetup: () => invoke<{ cliPath: string | null; agentChanges: 'auto' | 'review' }>('agent_setup'),
   setAgentChanges: (review: boolean) => invoke<void>('set_agent_changes', { review }),
+  activity: (limit: number, stage?: string) => invoke<LogEntry[]>('activity', { limit, stage: stage ?? null }),
+  agentsList: () => invoke<AgentProfile[]>('agents_list'),
+  openUrl: (url: string) => invoke<void>('open_url', { url }),
+  claimRelease: (taskId: string) => invoke<StageView[]>('claim_release', { taskId }),
   themesList: () => invoke<unknown[]>('themes_list'),
   assetSave: (name: string, bytes: number[]) => invoke<string>('asset_save', { name, bytes }),
   stageRename: (key: string, title: string) => invoke<StageView[]>('stage_rename', { key, title }),

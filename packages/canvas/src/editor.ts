@@ -20,6 +20,7 @@ import {
   STICKY_PAD, alignDeltas, distributeDeltas, expandGroups, findElements, findSnap, groupUpdates, guideCandidates, imageFit, snapGrid, snapMove, snapPoint,
   stickyNeeded, sweepHits, ungroupIds, unitsOf, wrapLines, type AlignMode, type Guide,
 } from './arrange';
+import { sameProfiles, type AgentProfile } from './agents';
 import { ImageCache, loadBlobImage } from './media';
 import { Minimap, centerCameraOn, type MiniRect } from './minimap';
 import { DEFAULT_CANVAS_KEYMAP, buildChordLookup, chordFromEvent, mergeKeymap, type CanvasCommand, type Keymap } from './keymap';
@@ -108,6 +109,7 @@ class EditorImpl implements Editor {
   private dirtyI = true;
   private raf = 0;
   private destroyed = false;
+  private agents: AgentProfile[] = [];
   private autoFit = true; // refit on resize until the user navigates
   private ro: ResizeObserver;
   private stats: EditorStats = { frames: 0, lastFrameMs: 0, totalFrameMs: 0, elements: 0 };
@@ -122,6 +124,7 @@ class EditorImpl implements Editor {
     this.labels = { ...DEFAULT_LABELS, ...opts.labels };
     this.title = opts.board.title;
     this.snap = !!opts.snap;
+    this.agents = opts.agents ?? [];
     this.images = new ImageCache(opts.assetUrl ?? ((path) => path), () => this.invalidate());
     if (opts.keymap) this.setKeymap(opts.keymap);
     if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
@@ -204,6 +207,11 @@ class EditorImpl implements Editor {
   }
 
   setTheme(theme: ThemeTokens) { this.theme = theme; this.closeMenu(); this.invalidateLayout(); }
+
+  setAgentProfiles(profiles: AgentProfile[]) {
+    if (sameProfiles(this.agents, profiles)) return;
+    this.agents = profiles.map((p) => ({ ...p })); this.invalidate();
+  }
 
   setStyle(style: 'clean' | 'sketch') { this.style = style; this.closeMenu(); this.invalidateLayout(); }
 
@@ -1717,13 +1725,15 @@ class EditorImpl implements Editor {
     return {
       cam: this.cam, width: this.width, height: this.height, dpr: window.devicePixelRatio || this.dpr, theme: this.theme, style: this.style,
       scene: this.scene, stages: this.stages, layoutOf: this.layoutFor, edges: this.edges().edges, cards: this.edges().cards, selected: this.selected,
-      selEdge: this.selEdge, editingId: this.editingId, labels: this.labels,
+      selEdge: this.selEdge, editingId: this.editingId, labels: this.labels, agents: this.agents,
       exec: this.exec, frameStats: this.frameInfo().stats, images: this.images,
     };
   }
 
   /** Highlight glows and ghost cards (interactive layer only: the static bitmap cache is never touched). */
-  private liveOverlay(): Pick<Overlay, 'glows' | 'ghosts' | 'ghostEdges'> {
+  private pulsing = false;
+
+  private liveOverlay(): Pick<Overlay, 'glows' | 'ghosts' | 'ghostEdges' | 'pulses' | 'pulseAlpha'> {
     const now = performance.now();
     pruneHighlights(this.hl, now);
     const { cards } = this.edges();
@@ -1744,7 +1754,17 @@ class EditorImpl implements Editor {
         if (a && b) edges.push({ a, b, soft: e.soft, aMs: isMilestone(gk.get(e.from) ?? this.stages.get(e.from)), bMs: isMilestone(gk.get(e.to) ?? this.stages.get(e.to)) });
       }
     }
-    return { glows, ghosts: gs, ghostEdges: edges };
+    // claimed, visible, header-legible cards pulse (below 0.35 the static layer draws a still dot)
+    const pulses: Overlay['pulses'] = [];
+    if (this.cam.scale >= 0.35) {
+      const vw = this.width / this.cam.scale, vh = this.height / this.cam.scale, vx = -this.cam.x / this.cam.scale, vy = -this.cam.y / this.cam.scale;
+      for (const [k, c] of cards) {
+        const st = this.stages.get(k);
+        if (st?.claims?.length && !isMilestone(st) && c.x < vx + vw && c.x + c.w > vx && c.y < vy + vh && c.y + c.h > vy) pulses.push({ el: c, stage: st });
+      }
+    }
+    this.pulsing = pulses.length > 0;
+    return { glows, ghosts: gs, ghostEdges: edges, pulses, pulseAlpha: 0.7 + 0.3 * Math.sin((now / 1600) * Math.PI * 2) };
   }
 
   private overlay(): Overlay {
@@ -1798,7 +1818,7 @@ class EditorImpl implements Editor {
     const st = this.state();
     if (this.dirtyS) { const m = this.dirtyS; this.dirtyS = 0; this.renderer.drawStatic(this.sCtx, st, m === 3 ? 'content' : m === 2 ? 'idle' : 'camera'); }
     if (this.dirtyI) { this.dirtyI = false; this.renderer.drawInteractive(this.iCtx, st, this.overlay()); }
-    if (this.hl.size) this.invalidate(false, true); // keep animating only while a highlight is alive
+    if (this.hl.size || this.pulsing) this.invalidate(false, true); // animate only while a highlight or a visible claim pulse is alive
     if (this.mini) this.drawMinimap();
     if (this.edit) this.placeTa();
     if (this.frameEdit) this.placeFrameEdit();

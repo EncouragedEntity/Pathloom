@@ -11,9 +11,11 @@ import type { Scene } from './scene';
 import { CARD, CARD_W, MS, edgeCurve, isMilestone, ellipsize, mixColors, statusColors, taskDone, withAlpha, wrapText, type CardLayout, type CardRect, type DepEdge } from './stage';
 import { measureText } from './measure';
 import type { CanvasLabels } from './editor-types';
+import { AVATAR_SIZE, avatarWidth, claimIndex, isAssetAvatar, resolveAgent, rowClaim, whoLabel, whoName } from './agents';
 import { execAlpha, frameHeaderRect } from './ops';
 import { STICKY_PAD, wrapLines, type Guide } from './arrange';
 import type { ImageCache } from './media';
+import type { AgentProfile } from './agents';
 
 export interface RenderState {
   cam: Camera;
@@ -36,6 +38,7 @@ export interface RenderState {
   /** done/total card members per frame id. */
   frameStats: ReadonlyMap<string, { done: number; total: number }>;
   images: ImageCache;
+  agents: readonly AgentProfile[];
 }
 
 export interface Overlay {
@@ -53,6 +56,10 @@ export interface Overlay {
   /** Fading glow rects (world) for highlighted cards. */
   glows: { b: Bounds; alpha: number }[];
   ghosts: { stage: StageView; el: CardElement }[];
+  /** Claimed cards (scale >= 0.35) whose header dot pulses; drawn here so the static cache stays untouched. */
+  pulses: { el: CardElement; stage: StageView }[];
+  /** Shared opacity of all pulse dots (0.4..1). */
+  pulseAlpha: number;
   ghostEdges: { a: CardRect; b: CardRect; soft: boolean; aMs: boolean; bMs: boolean }[];
   /** Smart-guide lines (world) shown while moving. */
   guides: Guide[];
@@ -83,6 +90,8 @@ function compileRough(ds: Drawable[]): RoughPart[] {
   return out;
 }
 
+const pillWidth = (text: string, t: ThemeTokens) => measureText(text, fontOf(11, t.fontUi)) + 14 + 13 + 4;
+const WHO_MAX_W = 78;
 const fontOf = (size: number, family: string, weight = 400) => `${weight} ${size}px ${family}`;
 const textFamily = (t: ThemeTokens, style: 'clean' | 'sketch') => (style === 'sketch' ? t.fontHand : t.fontUi);
 
@@ -556,6 +565,10 @@ export class Renderer {
     const a0 = ctx.globalAlpha;
     ctx.fillStyle = fg; ctx.globalAlpha = a0 * 0.5;
     ctx.fillRect(W - px - 74, cy - 10, 74, 20);
+    ctx.globalAlpha = a0;
+    const cl = stage.claims?.[0];
+    if (cl) { ctx.fillStyle = resolveAgent(cl.agent, s.agents, t).color; ctx.beginPath(); ctx.arc(W - px - 74 - 9, cy, 5, 0, Math.PI * 2); ctx.fill(); }
+    ctx.globalAlpha = a0 * 0.5;
     ctx.fillRect(px, cy - 5, 36, 10);
     ctx.globalAlpha = a0;
     const tsize = s.style === 'sketch' ? 30 : 24, lh = tsize * 1.2;
@@ -644,12 +657,16 @@ export class Renderer {
     ctx.font = fontOf(11, t.fontMono); ctx.fillStyle = t.muted;
     ctx.fillText(stage.key, px, cy);
     let x = px + measureText(stage.key, ctx.font) + 6;
-    const whoText = (stage.who === 'me' ? s.labels.whoMe : stage.who === 'ai' ? s.labels.whoAi : s.labels.whoBoth).toUpperCase();
+    const wn = whoName(stage.who), ag = wn ? resolveAgent(wn, s.agents, t) : null, wc = ag?.color ?? null;
     ctx.font = fontOf(10, t.fontUi);
-    const ww = measureText(whoText, ctx.font) + 12;
-    ctx.beginPath(); ctx.roundRect(x, cy - 8, ww, 16, 5); ctx.fillStyle = t.card2; ctx.fill();
-    ctx.fillStyle = stage.who === 'ai' ? t.accent : t.text2;
-    ctx.fillText(whoText, x + 6, cy + 0.5);
+    const whoText = ellipsize(whoLabel(stage.who, s.labels, s.agents).toUpperCase(), WHO_MAX_W, (q) => measureText(q, ctx.font));
+    const avW = avatarWidth(ag?.avatar, (q) => measureText(q, ctx.font));
+    const ww = measureText(whoText, ctx.font) + 12 + avW;
+    ctx.beginPath(); ctx.roundRect(x, cy - 8, ww, 16, 5); ctx.fillStyle = wc ? withAlpha(wc, 0.16) : t.card2; ctx.fill();
+    ctx.fillStyle = wc ?? (stage.who === 'ai' ? t.accent : t.text2);
+    if (ag?.avatar) this.drawAvatar(ctx, ag.avatar, x + 6, cy, wc!, s);
+    ctx.fillStyle = wc ?? (stage.who === 'ai' ? t.accent : t.text2);
+    ctx.fillText(whoText, x + 6 + avW, cy + 0.5);
     this.drawPill(ctx, stage, W - px, cy, s);
     // title
     const tsize = far ? (s.style === 'sketch' ? 30 : 24) : s.style === 'sketch' ? 22 : 15;
@@ -670,7 +687,8 @@ export class Renderer {
     ctx.fillStyle = t.muted; ctx.textAlign = 'right'; ctx.fillText(ptxt, W - px, progY + CARD.progH / 2 + 0.5); ctx.textAlign = 'left';
     if (far) return;
     // tasks
-    for (const row of L.tasks) this.drawTaskRow(ctx, row.task, row.y, s);
+    const ci = this.claimsOf(stage);
+    for (const row of L.tasks) this.drawTaskRow(ctx, row.task, row.y, s, rowClaim(ci, row.task));
     if (L.hiddenTasks > 0) {
       ctx.font = fontOf(11, t.fontUi); ctx.fillStyle = t.muted;
       ctx.fillText(s.labels.moreTasks.replace('{n}', String(L.hiddenTasks)), px + CARD.chk + 7, L.moreY + CARD.taskGap + CARD.taskH / 2);
@@ -690,7 +708,7 @@ export class Renderer {
     }
   }
 
-  private drawTaskRow(ctx: CanvasRenderingContext2D, task: CardLayout['tasks'][number]['task'], y: number, s: RenderState) {
+  private drawTaskRow(ctx: CanvasRenderingContext2D, task: CardLayout['tasks'][number]['task'], y: number, s: RenderState, claim?: { agent: string }) {
     const t = s.theme, px = CARD.padX, cy = y + CARD.taskH / 2, done = taskDone(task);
     const cx = px + CARD.chk / 2 + 1;
     ctx.beginPath(); ctx.arc(cx, cy, CARD.chk / 2 - 0.5, 0, Math.PI * 2);
@@ -705,6 +723,16 @@ export class Renderer {
     ctx.fillText(task.id, x, cy + 0.5);
     x += measureText(task.id, ctx.font) + 7;
     let right = CARD_W - px;
+    if (claim) {
+      const { name, color: col, avatar } = resolveAgent(claim.agent, s.agents, t);
+      ctx.font = fontOf(10, t.fontUi, 600);
+      const txt = ellipsize(name, 64, (q) => measureText(q, ctx.font)), avW = avatarWidth(avatar, (q) => measureText(q, ctx.font)), cw = measureText(txt, ctx.font) + 10 + avW;
+      ctx.beginPath(); ctx.roundRect(right - cw, cy - 7, cw, 14, 5); ctx.fillStyle = withAlpha(col, 0.16); ctx.fill();
+      if (avatar) this.drawAvatar(ctx, avatar, right - cw + 5, cy, col, s);
+      ctx.fillStyle = col; ctx.textAlign = 'left'; ctx.fillText(txt, right - cw + 5 + avW, cy + 0.5);
+      right -= cw + 6;
+      ctx.font = fontOf(10, t.fontMono); ctx.fillStyle = t.muted;
+    }
     if (task.sub.length) {
       const sc = `${task.sub.filter(taskDone).length}/${task.sub.length}`;
       ctx.textAlign = 'right'; ctx.fillText(sc, right, cy + 0.5); ctx.textAlign = 'left';
@@ -714,12 +742,30 @@ export class Renderer {
     ctx.fillText(ellipsize(task.title, right - x, (q) => measureText(q, ctx.font)), x, cy + 0.5);
   }
 
+  /** Chip avatar at (x, cy): emoji text, or a 12px circular image (agent-colour circle while loading / on error). */
+  private drawAvatar(ctx: CanvasRenderingContext2D, avatar: string, x: number, cy: number, col: string, s: RenderState) {
+    if (!isAssetAvatar(avatar)) { ctx.fillText(avatar, x, cy + 0.5); return; }
+    const r = AVATAR_SIZE / 2, cx = x + r, e = s.images.get(avatar);
+    ctx.save();
+    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    if (e.status === 'ready' && e.img) { ctx.clip(); ctx.drawImage(e.img, x, cy - r, AVATAR_SIZE, AVATAR_SIZE); }
+    else { ctx.fillStyle = withAlpha(col, 0.55); ctx.fill(); }
+    ctx.restore();
+  }
+
+  private claimCache = new WeakMap<StageView, Map<string, { taskId: string; agent: string; expiresAt: string }>>();
+  private claimsOf(stage: StageView) {
+    let m = this.claimCache.get(stage);
+    if (!m) this.claimCache.set(stage, (m = claimIndex(stage)));
+    return m;
+  }
+
   private drawPill(ctx: CanvasRenderingContext2D, stage: StageView, right: number, cy: number, s: RenderState) {
     const L = s.labels;
     const text = { done: L.statusDone, active: L.statusActive, ready: L.statusReady, blocked: L.statusBlocked }[stage.status];
     const { fg, bg } = statusColors(stage.status, s.theme);
     ctx.font = fontOf(11, s.theme.fontUi);
-    const w = measureText(text, ctx.font) + 14 + 13 + 4, h = 20, x = right - w;
+    const w = pillWidth(text, s.theme), h = 20, x = right - w;
     ctx.beginPath(); ctx.roundRect(x, cy - h / 2, w, h, h / 2); ctx.fillStyle = bg; ctx.fill();
     this.statusIcon(ctx, stage.status, x + 7 + 6.5, cy, fg);
     ctx.fillStyle = fg; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
@@ -815,6 +861,18 @@ export class Renderer {
       ctx.shadowColor = t.accent; ctx.shadowBlur = 26 * g.alpha;
       ctx.strokeStyle = withAlpha(t.accent, 0.9 * g.alpha); ctx.lineWidth = 3;
       ctx.stroke();
+      ctx.restore();
+    }
+    if (o.pulses.length) {
+      ctx.save();
+      ctx.setTransform(dpr * cam.scale, 0, 0, dpr * cam.scale, dpr * cam.x, dpr * cam.y);
+      ctx.globalAlpha = o.pulseAlpha;
+      for (const p of o.pulses) {
+        const cl = p.stage.claims![0], L = s.labels;
+        const text = { done: L.statusDone, active: L.statusActive, ready: L.statusReady, blocked: L.statusBlocked }[p.stage.status];
+        ctx.fillStyle = resolveAgent(cl.agent, s.agents, t).color;
+        ctx.beginPath(); ctx.arc(p.el.x + CARD_W - CARD.padX - pillWidth(text, t) - 9, p.el.y + CARD.padTop + CARD.headH / 2, 3.5, 0, Math.PI * 2); ctx.fill();
+      }
       ctx.restore();
     }
     for (const hb of o.haloCards) {

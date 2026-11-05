@@ -84,6 +84,7 @@ pub fn stage_views(stages: &[Stage]) -> Vec<StageView> {
                 s.tasks.len() as u32,
             ),
             stage: s.clone(),
+            claims: Vec::new(),
         })
         .collect()
 }

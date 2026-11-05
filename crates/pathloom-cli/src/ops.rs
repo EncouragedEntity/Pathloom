@@ -1,7 +1,8 @@
 //! Operations shared by the CLI and the MCP server. Everything returns JSON values and `ApiError`.
 
 use pathloom_core::{
-    ApplyOptions, ApplySpec, Error, Project, Stage, StageView, Status, Who, compute_statuses, stage_views,
+    AgentProfile, ApplyOptions, ApplySpec, Error, LogEntry, Project, SessionRef, Stage, StageView, Status, Who,
+    capabilities, compute_statuses, stage_views,
 };
 use serde::Serialize;
 use serde_json::{Value, json};
@@ -40,6 +41,9 @@ impl From<Error> for ApiError {
             Error::Cycle(nodes) => ("CYCLE", json!({"nodes": nodes})),
             Error::DuplicateKey(k) => ("DUPLICATE_KEY", json!({"key": k})),
             Error::Conflict { key } => ("CONFLICT", json!({"key": key})),
+            Error::Claimed { task_id, by, expires_at } => {
+                ("CLAIMED", json!({"task_id": task_id, "by": by, "expires_at": expires_at}))
+            }
             Error::InvalidName(n) if looks_like_path_escape(n) => ("OUT_OF_PROJECT", json!({"name": n})),
             Error::InvalidName(_)
             | Error::InvalidKey(_)
@@ -86,7 +90,7 @@ pub fn parse_status(s: &str) -> ApiResult<Status> {
 }
 
 pub fn parse_who(s: &str) -> ApiResult<Who> {
-    serde_json::from_value(json!(s)).map_err(|_| ApiError::new("INVALID_SPEC", format!("unknown who `{s}` (me|ai|both)")))
+    Who::parse(s).map_err(|m| ApiError::new("INVALID_SPEC", m))
 }
 
 fn row(v: &StageView) -> Value {
@@ -122,7 +126,7 @@ pub fn list_stages(p: &Project, f: &StageFilter, limit: usize, cursor: Option<&s
     let views: Vec<StageView> = stage_views(&p.load_stages()?)
         .into_iter()
         .filter(|v| f.status.is_none_or(|s| s == v.status))
-        .filter(|v| f.who.is_none_or(|w| w == v.stage.who))
+        .filter(|v| f.who.as_ref().is_none_or(|w| *w == v.stage.who))
         .filter(|v| on_board.as_ref().is_none_or(|b| b.contains(&v.stage.key)))
         .filter(|v| q.as_ref().is_none_or(|q| v.stage.key.to_lowercase().contains(q) || v.stage.title.to_lowercase().contains(q)))
         .collect();
@@ -149,8 +153,10 @@ pub fn get_stage(p: &Project, key: &str) -> ApiResult<Value> {
         o.insert("status".into(), to_v(&view.status));
         o.insert("progress".into(), json!({"done": view.progress.0, "total": view.progress.1}));
     }
+    let claims: Vec<_> = p.claims()?.into_iter().filter(|c| stage_key(&c.task_id) == key).collect();
     if let Some(o) = v.as_object_mut() {
         o.insert("hash".into(), json!(hash));
+        o.insert("claims".into(), to_v(&claims));
     }
     Ok(v)
 }
@@ -161,7 +167,10 @@ pub fn project_info(p: &Project, read_only: bool) -> ApiResult<Value> {
     let count = |s: Status| statuses.values().filter(|x| **x == s).count();
     Ok(json!({
         "name": p.config.name, "root": p.root.to_string_lossy(), "plan_dir": p.config.plan_dir,
+        "protocol": pathloom_core::PROTOCOL, "version": env!("CARGO_PKG_VERSION"),
+        "capabilities": capabilities(read_only),
         "agent_changes": to_v(&p.config.agent_changes), "read_only": read_only,
+        "agents": p.agents()?,
         "boards": p.list_boards()?,
         "stages": {"total": stages.len(), "done": count(Status::Done), "active": count(Status::Active),
                    "ready": count(Status::Ready), "blocked": count(Status::Blocked)},
@@ -221,14 +230,19 @@ pub fn parse_spec_value(v: &Value) -> ApiResult<ApplySpec> {
     }
 }
 
-pub fn set_task(p: &Project, task_id: &str, done: bool) -> ApiResult<Value> {
+pub fn set_task(p: &Project, a: &Actor, action: &str, task_id: &str, done: bool) -> ApiResult<Value> {
     let s = p.set_task_done(task_id, done)?;
-    Ok(json!({"task_id": task_id, "done": done, "stage": brief(&s, p)?}))
+    let v = json!({"task_id": task_id, "done": done, "stage": brief(&s, p)?});
+    let summary = format!("{task_id} {}", if done { "done" } else { "reopened" });
+    let e = entry(action, summary, vec![s.key.clone()], vec![task_id.into()], vec![stage_file(p, &s.key)]);
+    Ok(log(p, a, e, v))
 }
 
-pub fn add_comment(p: &Project, key: &str, author: &str, text: &str) -> ApiResult<Value> {
+pub fn add_comment(p: &Project, a: &Actor, key: &str, author: &str, text: &str) -> ApiResult<Value> {
     let s = p.add_comment(key, author, text)?;
-    Ok(json!({"stage": s.key, "comments": s.comments.len(), "author": author}))
+    let v = json!({"stage": s.key, "comments": s.comments.len(), "author": author});
+    let e = entry("add_comment", format!("comment on {key}"), vec![s.key.clone()], vec![], vec![stage_file(p, &s.key)]);
+    Ok(log(p, a, e, v))
 }
 
 fn brief(s: &Stage, p: &Project) -> ApiResult<Value> {
@@ -237,7 +251,7 @@ fn brief(s: &Stage, p: &Project) -> ApiResult<Value> {
     Ok(v.map(|v| row(&v)).unwrap_or(Value::Null))
 }
 
-pub fn layout(p: &Project, board: &str, only_new: &[String]) -> ApiResult<Value> {
+pub fn layout(p: &Project, a: &Actor, board: &str, only_new: &[String]) -> ApiResult<Value> {
     let b = p.layout_board(board, only_new)?;
     let cards: Vec<Value> = b
         .elements
@@ -245,11 +259,255 @@ pub fn layout(p: &Project, board: &str, only_new: &[String]) -> ApiResult<Value>
         .filter(|e| e.get("type").and_then(Value::as_str) == Some("card"))
         .map(|e| json!({"key": e.get("ref"), "x": e.get("x"), "y": e.get("y")}))
         .collect();
-    Ok(json!({"board": board, "cards": cards}))
+    let file = format!("{}/boards/{board}.board.json", p.config.plan_dir.trim_end_matches('/'));
+    let e = entry("layout_board", format!("laid out {} cards on {board}", cards.len()), vec![], vec![], vec![file]);
+    Ok(log(p, a, e, json!({"board": board, "cards": cards})))
 }
 
-pub fn validate(p: &Project, fix: bool) -> ApiResult<Value> {
+pub fn validate(p: &Project, a: &Actor, fix: bool) -> ApiResult<Value> {
     let fixed = if fix { p.validate_fix()? } else { vec![] };
     let issues = p.validate()?;
-    Ok(json!({"ok": issues.is_empty(), "issues": issues, "fixed": fixed}))
+    let v = json!({"ok": issues.is_empty(), "issues": issues, "fixed": fixed});
+    if fixed.is_empty() {
+        return Ok(v);
+    }
+    Ok(log(p, a, entry("validate --fix", format!("fixed {} problem(s)", fixed.len()), vec![], vec![], vec![]), v))
+}
+
+// ---- activity log, claims ----
+
+/// Who performs a mutation and through which door (`cli` | `mcp`); `name` is a normalized agent name.
+#[derive(Debug, Clone)]
+pub struct Actor {
+    pub name: String,
+    pub source: &'static str,
+    /// External client session the actions are done from; recorded in the log and on claims.
+    pub session: Option<SessionRef>,
+}
+
+impl Actor {
+    pub fn new(author: &str, source: &'static str) -> Self {
+        Actor { name: normalize_agent(author), source, session: None }
+    }
+
+    /// Attach a (validated) external session.
+    pub fn with_session(mut self, session: Option<SessionRef>) -> ApiResult<Actor> {
+        self.session = session.map(SessionRef::normalize).transpose()?;
+        Ok(self)
+    }
+}
+
+/// `agent:Claude Code` -> `claude-code`: prefix stripped, lowercase, anything but `[a-z0-9._-]` becomes `-`,
+/// at most 32 chars; empty -> `agent`.
+pub fn normalize_agent(s: &str) -> String {
+    let s = s.trim();
+    let s = s.strip_prefix("agent:").unwrap_or(s);
+    let n: String = s
+        .to_lowercase()
+        .chars()
+        .map(|c| if matches!(c, 'a'..='z' | '0'..='9' | '.' | '_' | '-') { c } else { '-' })
+        .take(32)
+        .collect();
+    if n.trim_matches('-').is_empty() { "agent".into() } else { n }
+}
+
+fn stage_key(task_id: &str) -> String {
+    task_id.split('-').next().unwrap_or("").to_string()
+}
+
+fn stage_file(p: &Project, key: &str) -> String {
+    format!("{}/stages/{key}.md", p.config.plan_dir.trim_end_matches('/'))
+}
+
+/// Write a log entry for a successful mutation. A failing log never fails the action:
+/// the problem is returned as `log_warning` inside `v`.
+pub fn log(p: &Project, a: &Actor, mut e: LogEntry, mut v: Value) -> Value {
+    e.author.clone_from(&a.name);
+    e.source = a.source.into();
+    if e.session.is_none() {
+        e.session.clone_from(&a.session);
+    }
+    if let Err(err) = p.log_action(&e)
+        && let Some(o) = v.as_object_mut()
+    {
+        o.insert("log_warning".into(), json!(format!("activity log not written: {err}")));
+    }
+    v
+}
+
+pub fn entry(action: &str, summary: impl Into<String>, stages: Vec<String>, tasks: Vec<String>, files: Vec<String>) -> LogEntry {
+    LogEntry { action: action.into(), summary: summary.into(), stages, tasks, files, ..Default::default() }
+}
+
+fn strings(v: &Value) -> Vec<String> {
+    v.as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(String::from)).collect()).unwrap_or_default()
+}
+
+/// Log the result of [`submit`] (nothing for a dry run; `propose` for review mode, else `action`).
+pub fn log_submit(p: &Project, a: &Actor, action: &str, spec: &ApplySpec, v: Value) -> Value {
+    let mode = v["mode"].as_str().unwrap_or("");
+    if mode == "dry_run" {
+        return v;
+    }
+    let r = &v["report"];
+    let (created, updated) = (strings(&r["created"]), strings(&r["updated"]));
+    let mut parts = Vec::new();
+    if !created.is_empty() {
+        parts.push(format!("created {}", created.join(", ")));
+    }
+    if !updated.is_empty() {
+        parts.push(format!("updated {}", updated.join(", ")));
+    }
+    let tasks: Vec<String> = spec.stages.iter().flat_map(|s| s.tasks_done.iter().cloned()).collect();
+    for (n, what) in [
+        (tasks.len(), "task(s) done"),
+        (spec.links.len(), "link(s)"),
+        (spec.unlinks.len(), "unlink(s)"),
+        (spec.comments.len(), "comment(s)"),
+    ] {
+        if n > 0 {
+            parts.push(format!("{n} {what}"));
+        }
+    }
+    let mut summary = if parts.is_empty() { "no changes".to_string() } else { parts.join("; ") };
+    let action = if mode == "proposed" {
+        summary = format!("proposed: {summary}");
+        "propose"
+    } else {
+        action
+    };
+    let stages = created.into_iter().chain(updated).collect();
+    log(p, a, entry(action, summary, stages, tasks, strings(&r["files"])), v)
+}
+
+pub fn claim_task(p: &Project, a: &Actor, task_id: &str, ttl_secs: u64, note: &str) -> ApiResult<Value> {
+    let c = p.claim_task_with(task_id, &a.name, ttl_secs, note, a.session.as_ref())?;
+    let e = entry("claim_task", format!("claimed {task_id}"), vec![stage_key(task_id)], vec![task_id.into()], vec![]);
+    Ok(log(p, a, e, to_v(&c)))
+}
+
+pub fn release_task(p: &Project, a: &Actor, task_id: &str, force: bool) -> ApiResult<Value> {
+    p.release_task(task_id, &a.name, force)?;
+    let e = entry("release_task", format!("released {task_id}"), vec![stage_key(task_id)], vec![task_id.into()], vec![]);
+    Ok(log(p, a, e, json!({"released": task_id})))
+}
+
+pub fn claims(p: &Project) -> ApiResult<Value> {
+    Ok(json!({"claims": p.claims()?}))
+}
+
+/// Latest log entries, newest first. `limit` 0 = 20, max 200.
+pub fn activity(p: &Project, limit: usize, stage: Option<&str>) -> ApiResult<Value> {
+    let limit = if limit == 0 { 20 } else { limit.min(200) };
+    Ok(json!({"entries": p.read_log(limit, stage)?}))
+}
+
+/// `90s`, `30m`, `2h`, or a bare number of minutes -> seconds.
+pub fn parse_ttl(s: &str) -> ApiResult<u64> {
+    let s = s.trim();
+    let (num, mult) = match s.chars().last() {
+        Some('s') => (&s[..s.len() - 1], 1),
+        Some('m') => (&s[..s.len() - 1], 60),
+        Some('h') => (&s[..s.len() - 1], 3600),
+        _ => (s, 60),
+    };
+    num.trim()
+        .parse::<u64>()
+        .ok()
+        .filter(|n| *n > 0)
+        .map(|n| n.saturating_mul(mult))
+        .ok_or_else(|| ApiError::new("INVALID_SPEC", format!("bad ttl `{s}` (use 90s, 30m or 2h)")))
+}
+
+// ---- agent profiles, watch, skill ----
+
+/// Fields of a profile to change; `None` keeps the current value (a new profile starts empty).
+#[derive(Default)]
+pub struct ProfilePatch {
+    pub name: Option<String>,
+    pub color: Option<String>,
+    pub avatar: Option<String>,
+    pub kind: Option<String>,
+}
+
+/// Create or update the profile `id`, merging `patch` into the existing one. Logged as `action`.
+pub fn set_agent(p: &Project, a: &Actor, action: &str, id: &str, patch: ProfilePatch) -> ApiResult<Value> {
+    let mut prof = p.agents()?.into_iter().find(|x| x.id == id).unwrap_or_else(|| AgentProfile { id: id.into(), ..Default::default() });
+    if let Some(v) = patch.name {
+        prof.name = v;
+    }
+    if let Some(v) = patch.color {
+        prof.color = v;
+    }
+    if let Some(v) = patch.avatar {
+        prof.avatar = v;
+    }
+    if let Some(v) = patch.kind {
+        prof.kind = v;
+    }
+    let saved = p.upsert_agent(prof)?;
+    let file = format!("{}/agents.json", p.config.plan_dir.trim_end_matches('/'));
+    let e = entry(action, format!("profile of {}", saved.id), vec![], vec![], vec![file]);
+    Ok(log(p, a, e, json!({"agent": saved})))
+}
+
+pub fn remove_agent(p: &Project, a: &Actor, id: &str) -> ApiResult<Value> {
+    p.remove_agent(id)?;
+    let file = format!("{}/agents.json", p.config.plan_dir.trim_end_matches('/'));
+    let e = entry("agent remove", format!("removed profile of {id}"), vec![], vec![], vec![file]);
+    Ok(log(p, a, e, json!({"removed": id})))
+}
+
+pub fn list_agents(p: &Project) -> ApiResult<Value> {
+    Ok(json!({"agents": p.agents()?}))
+}
+
+/// `--since` value: `YYYY-MM-DDTHH:MM:SSZ` (or `...THH:MMZ`) -> the fixed-width 20-char form.
+pub fn parse_since(s: &str) -> ApiResult<String> {
+    let t = s.trim();
+    let full = match t.len() {
+        20 => t.to_string(),
+        17 => format!("{}:00Z", &t[..16]),
+        _ => String::new(),
+    };
+    let shape = "dddd-dd-ddTdd:dd:ddZ";
+    let ok = full.len() == shape.len()
+        && full.chars().zip(shape.chars()).all(|(c, m)| if m == 'd' { c.is_ascii_digit() } else { c == m });
+    if ok { Ok(full) } else { Err(ApiError::new("INVALID_SPEC", format!("bad --since `{s}` (use 2026-11-05T10:00:00Z)"))) }
+}
+
+/// Log entries strictly newer than `since`, oldest first.
+pub fn entries_since(p: &Project, since: &str) -> ApiResult<Vec<LogEntry>> {
+    let mut v: Vec<LogEntry> = p.read_log(0, None)?.into_iter().filter(|e| e.at.as_str() > since).collect();
+    v.reverse();
+    Ok(v)
+}
+
+const SKILL_MD: &str = include_str!("../../../plugin/skills/pathloom/SKILL.md");
+
+/// Write the Agent Skills file `<root>/<dir>/pathloom/SKILL.md`. An existing file is kept unless `force`.
+pub fn install_skill(root: &Path, dir: &Path, force: bool) -> ApiResult<PathBuf> {
+    if dir.is_absolute() || dir.components().any(|c| matches!(c, Component::ParentDir | Component::Prefix(_))) {
+        return Err(ApiError::new("OUT_OF_PROJECT", format!("skill dir `{}` is outside the project", dir.display())));
+    }
+    let path = root.join(dir).join("pathloom").join("SKILL.md");
+    if path.exists() && !force {
+        return Err(ApiError::new("ALREADY_EXISTS", format!("{} exists (use --force to overwrite)", path.display())));
+    }
+    pathloom_core::write_file_atomic(&path, SKILL_MD.as_bytes()).map_err(|e| ApiError::new("IO_ERROR", e.to_string()))?;
+    Ok(path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn since_formats() {
+        assert_eq!(parse_since("2026-11-05T10:00:00Z").unwrap(), "2026-11-05T10:00:00Z");
+        assert_eq!(parse_since("2026-11-05T10:00Z").unwrap(), "2026-11-05T10:00:00Z");
+        for bad in ["", "yesterday", "2026-11-05", "2026-11-05T10:00:00+02:00", "2026-11-05 10:00:00Z"] {
+            assert!(parse_since(bad).is_err(), "{bad}");
+        }
+    }
 }

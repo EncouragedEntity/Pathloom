@@ -1,3 +1,4 @@
+import type { AgentProfile } from './agents';
 import type { CanvasCommand, Keymap } from './keymap';
 import type { Board, Ghost, StageView, ThemeTokens } from './types';
 
@@ -34,6 +35,10 @@ export interface CanvasLabels {
   missingStage: string;
   statusDone: string; statusActive: string; statusReady: string; statusBlocked: string;
   whoMe: string; whoAi: string; whoBoth: string;
+  /** `{agent}` is replaced by the agent display name. */
+  claimedBy: string;
+  /** Short status next to a pulsing claim dot. */
+  working: string;
   priorityHigh: string;
   /** `{n}` is replaced by the number of hidden tasks. */
   moreTasks: string;
@@ -62,6 +67,7 @@ export const DEFAULT_LABELS: CanvasLabels = {
   missingStage: 'Stage not found',
   statusDone: 'Done', statusActive: 'In progress', statusReady: 'Ready', statusBlocked: 'Blocked',
   whoMe: 'Me', whoAi: 'AI', whoBoth: 'Me + AI',
+  claimedBy: '{agent} is on it', working: 'working',
   priorityHigh: 'High',
   moreTasks: '+{n} more',
   frameDefaultName: 'Phase',
@@ -90,6 +96,8 @@ export interface EditorOptions {
   keymap?: Partial<Keymap>;
   /** URL an <img> can load for an image element's `asset` path (default: the path itself). */
   assetUrl?: (path: string) => string;
+  /** Initial agent profiles (see Editor.setAgentProfiles). */
+  agents?: AgentProfile[];
   /** Initial grid-snap state (default off). */
   snap?: boolean;
   /** Initial minimap state (default off). */
@@ -106,6 +114,8 @@ export interface Editor {
   setBoard(board: Board, opts?: { keepCamera?: boolean }): void;
   setStages(stages: StageView[]): void;
   setTheme(theme: ThemeTokens): void;
+  /** Per-agent name/colour/avatar overrides for who chips and claim chips. Avatar: 1-2 chars (emoji) or `assets/...` (loaded via assetUrl). */
+  setAgentProfiles(profiles: AgentProfile[]): void;
   setStyle(style: 'clean' | 'sketch'): void;
   setTool(tool: Tool): void;
   getTool(): Tool;

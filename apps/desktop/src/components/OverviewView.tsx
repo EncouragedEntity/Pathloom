@@ -4,6 +4,7 @@ import { IconLock, IconCalendar, IconSparkles, IconUser, IconDiamond } from '@ta
 import type { CardElement, FrameElement, StageView, Task } from '@pathloom/canvas';
 import { useApp } from '../store';
 import { focusStage } from './Sidebar';
+import { ago, agentText, claimOf, whoText } from '../agents';
 
 const isDone = (t: Task) => (t.sub.length ? t.sub.every((s) => s.done) : t.done);
 const PRIO = { high: 0, med: 1, low: 2 } as const;
@@ -11,7 +12,7 @@ const PRIO = { high: 0, med: 1, low: 2 } as const;
 /** Calm project overview (spec §6): progress, phases, what's next, blockers, deadlines, recent notes. */
 export function OverviewView() {
   const { t } = useTranslation();
-  const { stages, board, project, set } = useApp();
+  const { stages, board, project, set, activity, agents } = useApp();
   const go = (key: string) => { set({ view: 'board' }); setTimeout(() => focusStage(key), 0); };
 
   const data = useMemo(() => {
@@ -66,7 +67,12 @@ export function OverviewView() {
           {data.next.map(({ s, task }) => (
             <button key={task.id} className="ov-row" onClick={() => go(s.key)}>
               <span className="tid">{task.id}</span><span className="grow">{task.title}</span>
-              <span className={`who ${s.who}`}>{t(`who.${s.who}`)}</span>
+              {(() => {
+                const c = claimOf(s, task.id);
+                return c
+                  ? <span className="who taken" title={t('agentsUi.claimed')}>{agentText(c.agent, agents)}</span>
+                  : <span className={`who ${s.who.split(':')[0]}`}>{whoText(s.who, t, agents)}</span>;
+              })()}
             </button>
           ))}
         </section>
@@ -87,6 +93,27 @@ export function OverviewView() {
             <button key={s.key} className="ov-row" onClick={() => go(s.key)}>
               {s.kind === 'milestone' ? <IconDiamond size={14} className="muted" /> : <IconCalendar size={14} className="muted" />}
               <span className="grow">{s.title}</span><span className="muted">{s.due}</span>
+            </button>
+          ))}
+        </section>
+        <section className="box">
+          <h3>{t('agentsUi.workingNow')}</h3>
+          {stages.every((s) => !(s.claims ?? []).length) && <p className="muted">{t('agentsUi.nobody')}</p>}
+          {stages.flatMap((s) => (s.claims ?? []).map((c) => ({ s, c }))).map(({ s, c }) => (
+            <button key={c.taskId} className="ov-row" onClick={() => go(s.key)}>
+              <IconSparkles size={14} className="ac" /><span className="grow">{c.taskId} · {s.tasks.find((x) => x.id === c.taskId)?.title ?? s.title}</span>
+              <span className="muted">{agentText(c.agent, agents)}</span>
+            </button>
+          ))}
+        </section>
+        <section className="box">
+          <h3>{t('agentsUi.activity')}</h3>
+          {activity.length === 0 && <p className="muted">{t('agentsUi.noActivity')}</p>}
+          {activity.slice(0, 15).map((e, i) => (
+            <button key={`${e.at}-${i}`} className="ov-row" onClick={() => e.stages[0] && go(e.stages[0])}>
+              {e.source === 'app' ? <IconUser size={14} className="muted" /> : <IconSparkles size={14} className="ac" />}
+              <span className="grow"><b className="act-who">{e.source === 'app' || e.author === 'me' ? t('who.me') : agentText(e.author, agents)}</b> {e.summary}</span>
+              <span className="muted">{ago(e.at, t)}</span>
             </button>
           ))}
         </section>

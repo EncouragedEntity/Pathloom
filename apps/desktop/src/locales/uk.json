@@ -104,7 +104,9 @@
     "imageBroken": "Зображення недоступне",
     "minimap": "Мінімапа",
     "ghostBadge": "Пропозиція",
-    "milestoneInputs": "{done} з {total} входів"
+    "milestoneInputs": "{done} з {total} входів",
+    "claimedBy": "{agent} працює",
+    "working": "працює"
   },
   "common": {
     "undo": "Скасувати",
@@ -261,5 +263,36 @@
     "boards": "Дошки",
     "actions": "Команди",
     "nextTheme": "Наступна тема"
+  },
+  "agentsUi": {
+    "other": "Інший… (ai:ім'я або human:ім'я)",
+    "release": "Звільнити задачу, яку взяв {{agent}}",
+    "anyone": "Будь-хто",
+    "claimed": "Взяв",
+    "workingNow": "Зараз працюють",
+    "nobody": "Жоден агент не взяв задачу.",
+    "activity": "Активність агентів",
+    "noActivity": "Агенти ще нічого не робили."
+  },
+  "time": {
+    "now": "щойно",
+    "min_one": "{{count}} хв тому",
+    "min_few": "{{count}} хв тому",
+    "min_many": "{{count}} хв тому",
+    "min_other": "{{count}} хв тому",
+    "hour_one": "{{count}} год тому",
+    "hour_few": "{{count}} год тому",
+    "hour_many": "{{count}} год тому",
+    "hour_other": "{{count}} год тому",
+    "day_one": "{{count}} день тому",
+    "day_few": "{{count}} дні тому",
+    "day_many": "{{count}} днів тому",
+    "day_other": "{{count}} дня тому"
+  },
+  "sessions": {
+    "title": "Сесії",
+    "copy": "Копіювати id сесії",
+    "open": "Відкрити сесію",
+    "confirm": "Відкрити це посилання у його застосунку?\n{{url}}"
   }
 }

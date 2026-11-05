@@ -15,7 +15,8 @@ The desktop app watches these files and shows every change live, highlighted, wi
 
 ## Model
 
-- **Stage** = card with a short uppercase **key** (`AUTH`, `M0`). Fields: `title`, `kind` (`stage` | `milestone`), `who` (`me` | `ai` | `both`), `priority` (`low` | `med` | `high`), `due` (YYYY-MM-DD), `branch`, `depends`.
+- **Stage** = card with a short uppercase **key** (`AUTH`, `M0`). Fields: `title`, `kind` (`stage` | `milestone`), `who`, `priority` (`low` | `med` | `high`), `due` (YYYY-MM-DD), `branch`, `depends`.
+- **who** = `me` (the owner), `ai`, `both`, a named agent `ai:<name>` (`ai:claude`, `ai:codex`) or another person `human:<name>`. Set `who: ai:<your-name>` on stages you own.
 - **Task** = checklist line with id `<KEY>-<NN>` (`AUTH-03`); subtasks get a letter (`AUTH-03a`). A task with subtasks is done when all subtasks are done.
 - **Dependencies** live on the dependent stage: `depends: [CORE, {id: DOCS, soft: true}]`. Soft deps are drawn dashed and never block. Cycles are rejected.
 - **Status is computed, never set**: `done` (all tasks done), `blocked` (a hard dependency is not done), `active` (some tasks done), `ready` (nothing done yet, not blocked). Milestones are done when their hard deps are done.
@@ -23,7 +24,9 @@ The desktop app watches these files and shows every change live, highlighted, wi
 
 ## Workflow
 
-1. Start with `project_info` (or `pathloom stage list --json`) to see existing stages. Reuse keys; never delete or rewrite stages you did not create unless the user asks.
+1. Start with `project_info` (or `pathloom info --json`). It returns `protocol` (`pathloom/1`), `capabilities`, registered `agents` and the stages. Reuse keys; never delete or rewrite stages you did not create unless the user asks.
+   - Once per session, `register_agent {name, color, avatar}` so the board shows you with your own name and colour (`avatar`: one emoji, or an image path `assets/...` inside the plan).
+   - Read `activity` to see what other agents and the user did recently.
 2. To plan, call `apply` once with the whole structure instead of many small calls:
 
 ```yaml
@@ -45,9 +48,22 @@ frames:
 ```
 
    New cards are laid out automatically to the right of their dependencies. Re-applying the same spec is safe (tasks with the same title are not duplicated). Use `dry_run: true` to preview.
-3. While working: `next` lists tasks you can do right now (unblocked, by priority and due date). Mark progress with `set_task` (`{task_id, done}`) and leave short notes with `add_comment` — the user reads them on the card.
+3. While working:
+   - `next` lists tasks you can do right now (unblocked, by priority and due date). Tasks taken by other agents are hidden; your own come first.
+   - **Claim before you start**: `claim_task {task_id}` (30 min by default, re-claim to extend). The card shows your name, and other agents won't take the task. A `CLAIMED` error means someone else is on it — pick another task; never force unless the user asks.
+   - Mark progress with `set_task {task_id, done: true}` — this also releases your claim. If you stop without finishing, call `release_task`.
+   - Leave short notes with `add_comment` — the user reads them on the card.
+   - `activity` shows what other agents and the user did recently. Read it when you start a session.
 4. Keep `branch` on a stage in sync with the git branch you work on (`apply` with `branch: feat/x`).
 5. Run `validate` after larger edits.
+
+## Sessions
+
+If you run inside an app with its own session id (an orchestrator, an IDE chat), pass `session {client, id, url?, title?}` to `claim_task` and other mutating tools. The stage keeps the link so the user can jump back to the conversation where the work happened. `url` may be `https://…` or the app's own scheme (`maestro://…`).
+
+## Watching for changes
+
+`pathloom watch --json` streams NDJSON events (`hello`, `stage`, `board`, `claims`, `activity`, `proposal`, `agents`) so a client can react to edits by the user or other agents without polling. Use `--since <RFC3339>` to catch up first.
 
 ## Review mode
 

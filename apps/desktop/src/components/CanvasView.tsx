@@ -38,6 +38,7 @@ export function CanvasView() {
   const renderStyle = useApp((s) => s.renderStyle);
   const snap = useApp((s) => s.snap);
   const minimap = useApp((s) => s.minimap);
+  const agents = useApp((s) => s.agents);
   const customThemes = useApp((s) => s.customThemes);
   const themeObj = findTheme(theme, customThemes);
   const style = renderStyle === 'theme' ? themeObj.style : renderStyle;
@@ -92,6 +93,7 @@ export function CanvasView() {
       assetUrl,
       snap: state.snap,
       minimap: state.minimap,
+      agents: state.agents,
       labels: {
         newStage: t('canvas.newStage'),
         cycleError: t('canvas.cycleError'),
@@ -130,6 +132,8 @@ export function CanvasView() {
         minimap: t('canvas.minimap'),
         ghostBadge: t('canvas.ghostBadge'),
         milestoneInputs: t('canvas.milestoneInputs'),
+        claimedBy: t('canvas.claimedBy'),
+        working: t('canvas.working'),
       },
     });
     editorRef.current = editor;
@@ -157,6 +161,7 @@ export function CanvasView() {
 
   useEffect(() => { editorRef.current?.setSnap(snap); }, [snap]);
   useEffect(() => { editorRef.current?.setMinimap(minimap); }, [minimap]);
+  useEffect(() => { editorRef.current?.setAgentProfiles(agents); }, [agents]);
 
   const keysJson = JSON.stringify(keys);
   useEffect(() => {

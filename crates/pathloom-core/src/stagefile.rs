@@ -13,8 +13,8 @@ pub fn is_valid_key(key: &str) -> bool {
         && b.iter().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
 }
 
-const KNOWN: [&str; 10] =
-    ["id", "title", "kind", "who", "due", "priority", "branch", "pr", "tags", "depends"];
+const KNOWN: [&str; 11] =
+    ["id", "title", "kind", "who", "due", "priority", "branch", "pr", "tags", "depends", "sessions"];
 
 fn opt_str(m: &Map<String, Value>, k: &str) -> Option<String> {
     m.get(k).and_then(scalar_str)
@@ -51,7 +51,7 @@ impl Stage {
             st.kind = StageKind::parse(&s).ok_or_else(|| parse_err(path, format!("bad kind `{s}`")))?;
         }
         if let Some(s) = opt_str(&map, "who") {
-            st.who = Who::parse(&s).ok_or_else(|| parse_err(path, format!("bad who `{s}`")))?;
+            st.who = Who::parse(&s).map_err(|m| parse_err(path, m))?;
         }
         if let Some(s) = opt_str(&map, "priority") {
             st.priority =
@@ -75,7 +75,24 @@ impl Stage {
                 st.depends.push(dep.ok_or_else(|| parse_err(path, "bad depends entry"))?);
             }
         }
-        map.retain(|k, _| !KNOWN.contains(&k.as_str()));
+        // A hand-edited, invalid `sessions` list must not make the whole stage unreadable:
+        // keep it untouched as an unknown key (preserved on save) and expose no sessions.
+        let mut keep_raw_sessions = false;
+        if let Some(Value::Array(a)) = map.get("sessions") {
+            let parsed: Result<Vec<_>, String> = a
+                .iter()
+                .map(|v| {
+                    serde_json::from_value::<crate::session::SessionRef>(v.clone())
+                        .map_err(|e| e.to_string())
+                        .and_then(|s| s.normalize().map_err(|e| e.to_string()))
+                })
+                .collect();
+            match parsed {
+                Ok(list) => st.sessions = list,
+                Err(_) => keep_raw_sessions = true,
+            }
+        }
+        map.retain(|k, _| !KNOWN.contains(&k.as_str()) || (keep_raw_sessions && k == "sessions"));
         st.extra = map;
         parse_body(&mut st, body);
         Ok(st)
@@ -121,6 +138,10 @@ impl Stage {
                 })
                 .collect();
             line("depends", &format!("[{}]", d.join(", ")));
+        }
+        if !self.sessions.is_empty() {
+            let v = serde_json::to_value(&self.sessions).unwrap_or(Value::Null);
+            line("sessions", &yaml_value(&v));
         }
         for (k, v) in &self.extra {
             line(&scalar(k, false), &yaml_value(v));

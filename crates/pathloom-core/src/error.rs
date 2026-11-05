@@ -26,6 +26,9 @@ pub enum Error {
     /// Malformed or inconsistent `apply` spec / argument.
     #[error("invalid spec: {0}")]
     InvalidSpec(String),
+    /// The task is claimed by another agent.
+    #[error("task {task_id} is claimed by {by} until {expires_at}")]
+    Claimed { task_id: String, by: String, expires_at: String },
     #[error("project already initialized at {}", .0.display())]
     AlreadyInitialized(PathBuf),
 }
