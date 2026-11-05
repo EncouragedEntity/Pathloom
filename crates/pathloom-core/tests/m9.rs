@@ -119,3 +119,25 @@ fn task_notes_and_files() {
     let src = std::fs::read_to_string(d.path().join("plan/stages/A.md")).unwrap();
     assert!(!src.contains("task_info"), "{src}");
 }
+
+/// Cards size to their content in the app, which stores the real `w`; layout must not let a wide card cover
+/// the next column (full layout) or a card placed next to it (layout of new cards).
+#[test]
+fn layout_uses_stored_card_width() {
+    let (_d, p) = setup();
+    apply(&p, "stages:\n  - {id: A, title: A, tasks: [a]}\n  - {id: B, title: B, tasks: [b], depends: [A]}\n");
+    let mut b = p.load_board("roadmap").unwrap();
+    for e in &mut b.elements {
+        if e.get("ref").and_then(Value::as_str) == Some("A") {
+            e.insert("w".into(), 420.into());
+        }
+    }
+    p.save_board("roadmap", &b).unwrap();
+    p.layout_board("roadmap", &[]).unwrap();
+    let ((ax, _), (bx, _)) = (pos(&p, "A"), pos(&p, "B"));
+    assert!(bx >= ax + 420.0 + 70.0, "full layout: B starts after wide A: {ax} {bx}");
+
+    apply(&p, "stages:\n  - {id: C, title: C, tasks: [c], depends: [A]}\n");
+    p.layout_board("roadmap", &["C".to_string()]).unwrap();
+    assert!(pos(&p, "C").0 >= ax + 420.0 + 70.0, "new card goes right of wide A");
+}

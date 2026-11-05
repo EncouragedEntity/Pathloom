@@ -49,8 +49,8 @@ export function ghostEdges(ghosts: Ghost[], stages: Iterable<StageView>, onBoard
 export const ghostRect = (g: Ghost, h: number): CardRect => ({ x: g.x, y: g.y, w: cardW(g.stage), h });
 
 /** Bounds of scene content plus ghost cards (zoomToFit). */
-export function boundsWithGhosts(base: Bounds[], ghosts: Ghost[], heightOf: (s: StageView) => number): Bounds | null {
-  return unionBounds([...base, ...ghosts.map((g) => ({ minX: g.x, minY: g.y, maxX: g.x + cardW(g.stage), maxY: g.y + heightOf(g.stage) }))]);
+export function boundsWithGhosts(base: Bounds[], ghosts: Ghost[], heightOf: (s: StageView) => number, widthOf: (s: StageView) => number = cardW): Bounds | null {
+  return unionBounds([...base, ...ghosts.map((g) => ({ minX: g.x, minY: g.y, maxX: g.x + widthOf(g.stage), maxY: g.y + heightOf(g.stage) }))]);
 }
 
 /** Selection to keep across setBoard(keepCamera): only ids that still exist. */

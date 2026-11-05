@@ -98,3 +98,17 @@ export function pillLabel(stage: Pick<StageView, 'status' | 'claims'>, L: Canvas
 
 /** Claim chip text on a task row: agent name, then its heartbeat note ("Claude · running tests"). */
 export const claimChipText = (name: string, note?: string): string => (note?.trim() ? `${name} · ${note.trim()}` : name);
+
+/** A task title keeps at least this many px next to a claim chip. */
+export const TITLE_MIN_W = 80;
+/**
+ * Width (px) a row's claim chip may take; 0 = no chip, only a colour dot (the half-filled circle already says
+ * "in progress"). Several claimed rows on one card get only dots: one long chip repeated on every row hides the
+ * titles, and the card's "working" pill already names the agent. Otherwise the chip takes what is left after
+ * the task id and a readable title, at most 140px; under 24px it is not worth drawing.
+ */
+export function claimChipBudget(rowRight: number, titleStart: number, claimedRows: number): number {
+  if (claimedRows > 1) return 0;
+  const w = Math.min(140, rowRight - titleStart - TITLE_MIN_W - 6);
+  return w >= 24 ? w : 0;
+}

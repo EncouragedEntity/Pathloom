@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AVATAR_GAP, AVATAR_SIZE, agentColor, avatarWidth, claimChipText, claimIndex, displayName, pillLabel, resolveAgent, rowClaim, sameProfiles, whoLabel } from '../src/agents';
+import { AVATAR_GAP, AVATAR_SIZE, agentColor, avatarWidth, claimChipBudget, claimChipText, TITLE_MIN_W, claimIndex, displayName, pillLabel, resolveAgent, rowClaim, sameProfiles, whoLabel } from '../src/agents';
 import { DEFAULT_LABELS } from '../src/editor-types';
 import { cardLayout, parseHex } from '../src/stage';
 import type { StageView, Task, ThemeTokens } from '../src/types';
@@ -72,6 +72,15 @@ describe('claims', () => {
     expect(pillLabel({ status: 'ready', claims: [claim('A-1')] }, L)).toBe(L.working);
     expect(pillLabel({ status: 'active', claims: [claim('A-1')] }, L)).toBe(L.working);
     expect(pillLabel({ status: 'done', claims: [claim('A-1')] }, L)).toBe(L.statusDone);
+  });
+  it('claim chip never covers the task id or the title', () => {
+    // long id (BROWSER-01): the chip gets only what is left after the id and a readable title
+    expect(claimChipBudget(246, 104, 1)).toBe(246 - 104 - TITLE_MIN_W - 6);
+    expect(claimChipBudget(246, 10, 1)).toBe(140);
+    // no room: dot only
+    expect(claimChipBudget(246, 150, 1)).toBe(0);
+    // several claimed rows on one card (an agent took all 6 tasks): dots, no repeated chip
+    expect(claimChipBudget(246, 30, 6)).toBe(0);
   });
   it('claim chip shows the heartbeat note after the name', () => {
     expect(claimChipText('Claude')).toBe('Claude');

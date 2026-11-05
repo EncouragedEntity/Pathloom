@@ -1,7 +1,7 @@
 import type { Board, CardElement, Ghost, Element, FrameElement, ImageElement, LinearElement, FreedrawElement, ShapeElement, StageView, TextElement, ThemeTokens } from './types';
 import type { CanvasHost, CanvasLabels, Editor, EditorOptions, EditorStats, Tool } from './editor-types';
 import { DEFAULT_LABELS } from './editor-types';
-import { edgeView, pushApart, type EdgeOptions, type EdgeView } from './edgeview';
+import { edgeView, pushApart, pushRight, type EdgeOptions, type EdgeView } from './edgeview';
 import { Scene } from './scene';
 import { History, type Change } from './history';
 import { clampScale, fitBounds, screenToWorld, worldToScreen, zoomAt, type Camera } from './camera';
@@ -12,7 +12,7 @@ import {
 import { newId, newSeed } from './id';
 import { keyAfter, keyBetween } from './index-key';
 import { computeFrames, execToolAllowed, frameHeaderRect, frameMembers, frameProgress, planRemoveStageCards, reorderKeys, unboundArrows } from './ops';
-import { CARD, CARD_W, MISSING_H, cardLayout, cardW, edgeCurve, extractEdges, hitCheckbox, isMilestone, milestoneBounds, milestoneHit, statusColors, taskDone, type CardLayout, type DepEdge } from './stage';
+import { CARD, CARD_W, MISSING_H, MS, cardLayout, edgeCurve, extractEdges, hitCheckbox, isMilestone, milestoneBounds, milestoneHit, statusColors, taskDone, type CardLayout, type DepEdge } from './stage';
 import { clearMeasureCache, measureText } from './measure';
 import { Renderer, type Overlay, type RenderState } from './render';
 import { STATIC_CACHE } from './lod';
@@ -263,7 +263,7 @@ class EditorImpl implements Editor {
   zoomToFit() {
     this.anim = null;
     // frame titles sit above the frame: leave room for them
-    const b = boundsWithGhosts(this.scene.all().map((e) => { const x = elementBounds(e); return e.type === 'frame' ? { ...x, minY: x.minY - 40 } : x; }), this.ghosts, (s) => this.layoutOf(s).h);
+    const b = boundsWithGhosts(this.scene.all().map((e) => { const x = elementBounds(e); return e.type === 'frame' ? { ...x, minY: x.minY - 40 } : x; }), this.ghosts, (s) => this.layoutOf(s).h, (s) => this.layoutOf(s).w);
     this.setCamera(fitBounds(b, this.width, this.height));
   }
 
@@ -382,7 +382,7 @@ class EditorImpl implements Editor {
     const cur = this.scene.get(el.id);
     if (!cur) return;
     this.act(() => {
-      const card: CardElement = { id: newId(), type: 'card', ref: view.key, x: cur.x, y: cur.y, w: cardW(view), h: this.layoutOf(view).h, index: cur.index };
+      const card: CardElement = { id: newId(), type: 'card', ref: view.key, x: cur.x, y: cur.y, w: this.layoutOf(view).w, h: this.layoutOf(view).h, index: cur.index };
       this.del(cur.id);
       this.put(card);
       for (const o of [...this.scene.all()]) {
@@ -403,7 +403,9 @@ class EditorImpl implements Editor {
   private loadBoard(board: Board) {
     this.autoLayout = !!board.autoLayout;
     this.scene.load(board.elements.map(clone));
-    this.relayoutCards(false);
+    // Widths are content-sized: a board saved by an older version (or by the CLI, which always writes 250)
+    // gets the measured widths stored once, so `pathloom layout` on the files sees the real card sizes.
+    if (this.relayoutCards(false)) this.emitBoard();
     this.remeasureTexts();
     this.invalidate();
   }
@@ -426,7 +428,8 @@ class EditorImpl implements Editor {
     if (!l) {
       const ms = isMilestone(s), sk = this.style === 'sketch';
       const font = ms ? `600 ${sk ? 18 : 13}px ${sk ? this.theme.fontHand : this.theme.fontUi}` : this.titleFont();
-      l = cardLayout(s, (t) => measureText(t, font), ms ? (sk ? 21 : 16) : sk ? 27 : 20);
+      const idFont = `400 10px ${this.theme.fontMono}`, taskFont = `400 12px ${this.theme.fontUi}`; // same strings as render.ts fontOf
+      l = cardLayout(s, (t) => measureText(t, font), ms ? (sk ? 21 : 16) : sk ? 27 : 20, 2, (t, k) => measureText(t, k === 'id' ? idFont : taskFont));
       this.layouts.set(s, l);
     }
     return l;
@@ -446,24 +449,33 @@ class EditorImpl implements Editor {
   private layoutFor = (s: StageView): CardLayout => (this.exec ? this.execLayoutOf(s) : this.layoutOf(s));
 
   /** Store computed card heights back on the elements (and keep bound arrows attached). */
-  private relayoutCards(emit: boolean) {
-    const changed = new Set<string>(), grown: string[] = [];
+  /** Returns true when a card width changed (see loadBoard). */
+  private relayoutCards(emit: boolean): boolean {
+    const changed = new Set<string>(), grown: string[] = [], widened: string[] = [];
+    let widthChanged = false;
     for (const el of this.scene.all()) {
       if (el.type !== 'card') continue;
       const st = this.stages.get((el as CardElement).ref);
       const L = st && this.layoutOf(st), h = L ? L.h : MISSING_H, w = L ? L.w : CARD_W;
       if (el.h !== h || el.w !== w) {
         if (h > el.h) grown.push(el.id);
-        this.scene.set({ ...el, x: el.x + (el.w - w) / 2, w, h }); changed.add(el.id); // keep the centre when the width changes
+        if (w > el.w && !isMilestone(st)) widened.push(el.id);
+        if (w !== el.w) widthChanged = true;
+        // a stage card keeps its left edge (it grows into the gap on its right, see pushRight);
+        // a stage <-> milestone switch keeps the centre
+        const x = isMilestone(st) || el.w === MS.w ? el.x + (el.w - w) / 2 : el.x;
+        this.scene.set({ ...el, x, w, h }); changed.add(el.id);
       }
     }
-    // A card that grew (new tasks) pushes the cards under it down instead of covering them.
-    if (grown.length && !this.exec) {
-      const cards = this.scene.all().filter((e) => e.type === 'card');
-      for (const [id, y] of pushApart(cards, grown)) { const el = this.scene.get(id); if (el) { this.scene.set({ ...el, y }); changed.add(id); } }
+    // A card that grew (new tasks, longer titles) pushes the cards under it down and to its right instead of covering them.
+    if ((grown.length || widened.length) && !this.exec) {
+      const cards = () => this.scene.all().filter((e) => e.type === 'card');
+      for (const [id, x] of pushRight(cards(), widened)) { const el = this.scene.get(id); if (el) { this.scene.set({ ...el, x }); changed.add(id); } }
+      for (const [id, y] of pushApart(cards(), grown)) { const el = this.scene.get(id); if (el) { this.scene.set({ ...el, y }); changed.add(id); } }
       this.growFrames(changed);
     }
     if (changed.size) { this.reroute(changed); if (emit) this.emitBoard(); }
+    return widthChanged;
   }
 
   /** Frames that hold a changed card grow to keep all their members inside (they never shrink here). */
@@ -1156,7 +1168,7 @@ class EditorImpl implements Editor {
     this.stages.set(view.key, view); this.stagesRev++;
     let id = '';
     this.act(() => {
-      const card: CardElement = { id: newId(), type: 'card', ref: view.key, x: w[0], y: w[1], w: cardW(view), h: this.layoutOf(view).h, index: this.nextIndex() };
+      const card: CardElement = { id: newId(), type: 'card', ref: view.key, x: w[0], y: w[1], w: this.layoutOf(view).w, h: this.layoutOf(view).h, index: this.nextIndex() };
       id = card.id;
       this.put(card);
     });
@@ -1829,7 +1841,7 @@ class EditorImpl implements Editor {
       const c = cards.get(key);
       if (c) glows.push({ b: this.cardBounds(c), alpha: highlightAlpha(h, now) });
     }
-    const gs = this.ghosts.map((g) => ({ stage: g.stage, el: { id: 'ghost:' + g.stage.key, type: 'card', ref: g.stage.key, x: g.x, y: g.y, w: cardW(g.stage), h: this.layoutOf(g.stage).h, index: '' } as CardElement }));
+    const gs = this.ghosts.map((g) => ({ stage: g.stage, el: { id: 'ghost:' + g.stage.key, type: 'card', ref: g.stage.key, x: g.x, y: g.y, w: this.layoutOf(g.stage).w, h: this.layoutOf(g.stage).h, index: '' } as CardElement }));
     const rects = new Map<string, { x: number; y: number; w: number; h: number }>();
     for (const [k, c] of cards) rects.set(k, c);
     for (const g of gs) rects.set(g.stage.key, g.el);

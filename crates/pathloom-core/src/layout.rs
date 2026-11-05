@@ -12,7 +12,10 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 pub(crate) const X_STEP: f64 = 320.0;
 pub(crate) const Y_STEP: f64 = 220.0;
+/// Default card width; the app widens cards to their content and stores the real `w`, which layout uses.
 pub(crate) const CARD_W: f64 = 250.0;
+/// Horizontal gap between layout columns (right edge of the widest card to the next column).
+const COL_GAP: f64 = X_STEP - CARD_W;
 pub(crate) const CARD_H: f64 = 140.0;
 /// Must stay below half the gap between layout columns (X_STEP - CARD_W = 70) so neighbouring frames never overlap.
 pub(crate) const FRAME_PAD: f64 = 24.0;
@@ -171,7 +174,7 @@ pub(crate) fn layout_elements(
         (0.0, 0.0)
     } else {
         (
-            obstacles.iter().map(|(r, _)| r.right()).fold(f64::NEG_INFINITY, f64::max) + (X_STEP - CARD_W),
+            obstacles.iter().map(|(r, _)| r.right()).fold(f64::NEG_INFINITY, f64::max) + COL_GAP,
             obstacles.iter().map(|(r, _)| r.y).fold(f64::INFINITY, f64::min),
         )
     };
@@ -190,10 +193,10 @@ pub(crate) fn layout_elements(
                 .and_then(|t| pos_of(t));
             let deps: Vec<Rect> = deps_of(k).iter().filter_map(|d| pos_of(d)).collect();
             let (x, y) = if let Some(h) = hint {
-                (h.x + X_STEP, h.y)
+                (h.right() + COL_GAP, h.y)
             } else if !deps.is_empty() {
                 (
-                    deps.iter().map(|r| r.x).fold(f64::NEG_INFINITY, f64::max) + X_STEP,
+                    deps.iter().map(Rect::right).fold(f64::NEG_INFINITY, f64::max) + COL_GAP,
                     deps.iter().map(|r| r.y).sum::<f64>() / deps.len() as f64,
                 )
             } else {
@@ -205,16 +208,16 @@ pub(crate) fn layout_elements(
         }
         items.sort_by(|a, b| a.0.cmp(&b.0).then(a.3.total_cmp(&b.3)).then(a.4.total_cmp(&b.4)).then_with(|| a.1.cmp(b.1)));
         for (_, k, x, mut y, _) in items {
-            let h = card_rect(&els[card_of[k.as_str()]]).h;
+            let Rect { w, h, .. } = card_rect(&els[card_of[k.as_str()]]);
             for _ in 0..10_000 {
-                let me = Rect { x, y, w: CARD_W, h };
+                let me = Rect { x, y, w, h };
                 let Some((o, mv)) = obstacles.iter().find(|(o, _)| me.overlaps(&o.grow(GAP))) else { break };
                 y = (o.bottom() + GAP).max(if *mv { o.y + Y_STEP } else { 0.0 });
             }
             let el = &mut els[card_of[k.as_str()]];
             el.insert("x".into(), num(x));
             el.insert("y".into(), num(y));
-            obstacles.push((Rect { x, y, w: CARD_W, h }, true));
+            obstacles.push((Rect { x, y, w, h }, true));
             placed.insert(k.as_str());
         }
     }
@@ -408,13 +411,19 @@ pub(crate) fn layout_full(els: &mut [El], stages: &[Stage]) -> Result<Vec<String
     }
 
     // Coordinates: column x; y level with the prerequisites when there is room.
-    let heights: HashMap<String, f64> = order.iter().map(|k| (k.clone(), card_rect(&els[card_of[k]]).h)).collect();
-    let height = |k: &str| heights[k];
+    let height = |k: &str| rects[k].h;
+    let width = |k: &str| rects[k].w;
+    // Column x: each column starts COL_GAP right of the widest card of the previous one (cards size to content).
+    let mut col_x = vec![root_x; ncols];
+    for ci in 1..ncols {
+        let widest = cols[ci - 1].iter().map(|k| width(k)).fold(CARD_W, f64::max);
+        col_x[ci] = col_x[ci - 1] + widest + COL_GAP;
+    }
     let mut pos: HashMap<String, (f64, f64)> = HashMap::new();
     for (ci, c) in cols.iter().enumerate() {
         let mut bottom = f64::NEG_INFINITY;
         for k in c {
-            let x = root_x + ci as f64 * X_STEP + col[k].1 as f64 * FRAME_GAP;
+            let x = col_x[ci] + col[k].1 as f64 * FRAME_GAP;
             let h = height(k);
             // Level with the prerequisites (fewer crossings than starting every phase at the top).
             let pre: Vec<f64> = deps_of(k).iter().filter_map(|d| pos.get(d).map(|(_, y)| y + height(d) / 2.0)).collect();
@@ -448,11 +457,11 @@ pub(crate) fn layout_full(els: &mut [El], stages: &[Stage]) -> Result<Vec<String
     let mut shift: HashMap<usize, f64> = HashMap::new(); // per column: how far earlier cards were pushed
     for k in ordered {
         let (x, y0) = pos[k];
-        let h = height(k);
+        let (w, h) = (width(k), height(k));
         let ci = col[k].0;
         let mut y = y0 + shift.get(&ci).copied().unwrap_or(0.0);
         for _ in 0..10_000 {
-            let me = Rect { x, y, w: CARD_W, h };
+            let me = Rect { x, y, w, h };
             let Some(o) = obstacles.iter().find(|o| me.overlaps(&o.grow(GAP))) else { break };
             y = o.bottom() + GAP;
         }
@@ -460,7 +469,7 @@ pub(crate) fn layout_full(els: &mut [El], stages: &[Stage]) -> Result<Vec<String
         let el = &mut els[card_of[k]];
         el.insert("x".into(), num(x));
         el.insert("y".into(), num(y));
-        obstacles.push(Rect { x, y, w: CARD_W, h });
+        obstacles.push(Rect { x, y, w, h });
     }
 
     // Inner frames first, so an outer frame fits around them.

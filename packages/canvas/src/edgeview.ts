@@ -117,3 +117,24 @@ export function pushApart(rects: readonly { id: string; x: number; y: number; w:
   }
   return moved;
 }
+
+/**
+ * Cards that got wider (they size to their content) push the cards to their right that they now reach,
+ * level with them, further right (cascading). Returns the new x per moved card.
+ */
+export function pushRight(rects: readonly { id: string; x: number; y: number; w: number; h: number }[], widened: Iterable<string>, gap = 20): Map<string, number> {
+  const r = new Map(rects.map((c) => [c.id, { ...c }]));
+  const moved = new Map<string, number>();
+  const queue = [...widened].filter((id) => r.has(id));
+  for (let guard = 0; queue.length && guard < 10_000; guard++) {
+    const g = r.get(queue.shift()!)!;
+    for (const c of r.values()) {
+      if (c.id === g.id || c.y >= g.y + g.h || g.y >= c.y + c.h) continue;
+      if (c.x < g.x || c.x >= g.x + g.w + gap) continue;
+      c.x = g.x + g.w + gap;
+      moved.set(c.id, c.x);
+      queue.push(c.id);
+    }
+  }
+  return moved;
+}

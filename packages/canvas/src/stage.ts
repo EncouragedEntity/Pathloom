@@ -1,7 +1,9 @@
 import type { CardElement, StageStatus, StageView, Task, ThemeTokens } from './types';
 import type { Bezier, Point } from './geometry';
 
+/** Narrowest stage card; cards grow with their content up to CARD_MAX_W. */
 export const CARD_W = 250;
+export const CARD_MAX_W = 400;
 export const MISSING_H = 64;
 
 /** Milestone gate metrics (world px): box, diamond half-diagonal and its centre line, label rows. */
@@ -22,6 +24,24 @@ export const CARD = {
 } as const;
 
 export type MeasureFn = (text: string) => number;
+/** Text width in a task row: `id` = 10px mono (ids, subtask counts), `task` = 12px UI (titles). */
+export type RowMeasureFn = (text: string, kind: 'id' | 'task') => number;
+
+/**
+ * Card width for its content, CARD_W..CARD_MAX_W, rounded up to 10px so small edits do not shift it:
+ * every shown task row (circle, id, title, subtask count) on one line, and the title on at most two lines.
+ * Claims do not count: they come and go every few minutes and would move cards and rewrite the board file;
+ * the claim chip takes the room that is left (see claimChipBudget).
+ */
+export function cardWidth(stage: Pick<StageView, 'title' | 'tasks'>, measureTitle: MeasureFn, measureRow: RowMeasureFn): number {
+  const pad = CARD.padX * 2;
+  let need = pad + measureTitle(stage.title) / 2 + 24; // two lines, with slack for word breaks
+  for (const t of stage.tasks.slice(0, CARD.maxTasks)) {
+    const sub = t.sub.length ? measureRow(`${t.sub.length}/${t.sub.length}`, 'id') + 7 : 0;
+    need = Math.max(need, pad + CARD.chk + 7 + measureRow(t.id, 'id') + 7 + measureRow(t.title, 'task') + sub);
+  }
+  return Math.min(CARD_MAX_W, Math.max(CARD_W, Math.ceil(need / 10) * 10));
+}
 
 export interface CardLayout {
   w: number;
@@ -71,9 +91,11 @@ export function ellipsize(text: string, maxW: number, measure: MeasureFn): strin
 export const hasFooter = (s: StageView) => !!s.due || s.priority === 'high' || !!s.branch;
 
 /** Card layout. Height depends on the number of tasks (capped), wrapped title lines and footer presence. */
-export function cardLayout(stage: StageView, measureTitle: MeasureFn, titleLH = 20, maxTitleLines = 2): CardLayout {
+/** Without `measureRow` the card keeps the fixed CARD_W (tests, hosts that do not measure rows). */
+export function cardLayout(stage: StageView, measureTitle: MeasureFn, titleLH = 20, maxTitleLines = 2, measureRow?: RowMeasureFn): CardLayout {
   if (isMilestone(stage)) return milestoneLayout(stage, measureTitle, titleLH);
-  const innerW = CARD_W - CARD.padX * 2;
+  const w = measureRow ? cardWidth(stage, measureTitle, measureRow) : CARD_W;
+  const innerW = w - CARD.padX * 2;
   const titleLines = wrapText(stage.title, innerW, measureTitle, maxTitleLines);
   let y = CARD.padTop + CARD.headH + CARD.headGap;
   const titleY = y;
@@ -92,7 +114,7 @@ export function cardLayout(stage: StageView, measureTitle: MeasureFn, titleLH = 
   if (hiddenTasks > 0) y += CARD.taskGap + CARD.taskH;
   let footerY: number | null = null;
   if (hasFooter(stage)) { y += CARD.footTop; footerY = y; y += 1 + CARD.footPad + CARD.footH; }
-  return { w: CARD_W, h: y + CARD.padBottom, titleLines, titleLH, titleY, progY, tasks, hiddenTasks, moreY, footerY };
+  return { w, h: y + CARD.padBottom, titleLines, titleLH, titleY, progY, tasks, hiddenTasks, moreY, footerY };
 }
 
 /** Milestone gate: diamond on top, up to 2 title lines and the "N of M inputs" line below; height grows if the lines need it. */

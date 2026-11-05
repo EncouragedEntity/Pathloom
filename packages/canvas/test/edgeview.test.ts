@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bundleEdges, chainOf, edgeKey, edgeView, pushApart, redundantEdges } from '../src/edgeview';
+import { bundleEdges, chainOf, edgeKey, edgeView, pushApart, pushRight, redundantEdges } from '../src/edgeview';
 import type { DepEdge } from '../src/stage';
 
 const e = (from: string, to: string, soft = false): DepEdge => ({ from, to, soft, fromDone: false });
@@ -55,5 +55,19 @@ describe('pushApart', () => {
     expect(moved.get('b')).toBe(320);
     expect(moved.get('c')).toBe(440);
     expect(moved.has('o')).toBe(false);
+  });
+});
+
+describe('pushRight', () => {
+  const r = (id: string, x: number, y = 0, w = 250, h = 100) => ({ id, x, y, w, h });
+  it('a widened card pushes the level cards it reaches, cascading', () => {
+    const moved = pushRight([r('A', 0, 0, 400), r('B', 320), r('C', 640), r('D', 320, 300)], ['A']);
+    expect(moved.get('B')).toBe(420);
+    expect(moved.get('C')).toBe(690); // B now ends at 670
+    expect(moved.has('D')).toBe(false); // below A, untouched
+  });
+  it('cards left of it or far enough right stay', () => {
+    const moved = pushRight([r('Z', -300), r('A', 0, 0, 300), r('B', 400)], ['A']);
+    expect(moved.size).toBe(0);
   });
 });

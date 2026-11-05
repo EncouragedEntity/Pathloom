@@ -8,10 +8,10 @@ import { type StaticMode, cacheCovers, cacheBlit, cacheMargin, lodSketch, lodDot
 import { visibleBounds, worldToScreen } from './camera';
 import { absPoints, elementCenter, type Bounds, type Point } from './geometry';
 import type { Scene } from './scene';
-import { CARD, CARD_W, MS, edgeCurve, isMilestone, ellipsize, mixColors, statusColors, taskDone, withAlpha, wrapText, type CardLayout, type CardRect, type DepEdge } from './stage';
+import { CARD, MS, edgeCurve, isMilestone, ellipsize, mixColors, statusColors, taskDone, withAlpha, wrapText, type CardLayout, type CardRect, type DepEdge } from './stage';
 import { measureText } from './measure';
 import type { CanvasLabels } from './editor-types';
-import { AVATAR_SIZE, avatarWidth, claimChipText, claimIndex, isAssetAvatar, pillLabel, resolveAgent, rowClaim, whoLabel, whoName } from './agents';
+import { AVATAR_SIZE, avatarWidth, claimChipBudget, claimChipText, claimIndex, isAssetAvatar, pillLabel, resolveAgent, rowClaim, whoLabel, whoName } from './agents';
 import { execAlpha, frameHeaderRect } from './ops';
 import { STICKY_PAD, wrapLines, type Guide } from './arrange';
 import type { ImageCache } from './media';
@@ -604,17 +604,17 @@ export class Renderer {
     return v;
   }
 
-  private farTitle(stage: StageView, font: string): string[] {
+  private farTitle(stage: StageView, font: string, w: number): string[] {
     const hit = this.farTitles.get(stage);
     if (hit && hit.font === font) return hit.lines;
-    const lines = this.wrapped(stage.title, font, CARD_W - CARD.padX * 2, 3);
+    const lines = this.wrapped(stage.title, font, w - CARD.padX * 2, 3);
     this.farTitles.set(stage, { font, lines });
     return lines;
   }
 
   /** Card at scale < 0.35: no header/task/footer text is measured or drawn; title text only if >= 4px, else bars. */
   private drawCardTiny(ctx: CanvasRenderingContext2D, stage: StageView, L: CardLayout, H: number, s: RenderState) {
-    const t = s.theme, px = CARD.padX, W = CARD_W, cy = CARD.padTop + CARD.headH / 2;
+    const t = s.theme, px = CARD.padX, W = L.w, cy = CARD.padTop + CARD.headH / 2;
     const fg = stage.status === 'done' ? t.ok : stage.status === 'active' ? t.warn : stage.status === 'ready' ? t.accent : t.muted;
     const a0 = ctx.globalAlpha;
     ctx.fillStyle = fg; ctx.globalAlpha = a0 * 0.5;
@@ -629,7 +629,7 @@ export class Renderer {
     if (tsize * s.cam.scale >= TEXT_MIN_PX) {
       const tfont = fontOf(tsize, textFamily(t, s.style), 600);
       ctx.font = tfont; ctx.fillStyle = t.text; ctx.textBaseline = 'top'; ctx.textAlign = 'left';
-      this.farTitle(stage, tfont).forEach((ln, i) => ctx.fillText(ln, px, L.titleY + i * lh + (lh - tsize) / 2 - 1));
+      this.farTitle(stage, tfont, L.w).forEach((ln, i) => ctx.fillText(ln, px, L.titleY + i * lh + (lh - tsize) / 2 - 1));
     } else {
       ctx.fillStyle = t.text; ctx.globalAlpha = a0 * 0.45;
       const n = Math.min(3, Math.max(1, L.titleLines.length));
@@ -697,7 +697,7 @@ export class Renderer {
     const t = s.theme, stage = ghost ?? s.stages.get(el.ref);
     if (stage && isMilestone(stage)) { this.drawMilestone(ctx, el, s, stage, !!ghost); return; }
     ctx.translate(el.x, el.y);
-    const W = CARD_W, H = el.h, r = t.radiusCard;
+    const W = el.w, H = el.h, r = t.radiusCard; // cards size to their content (layout w, stored on the element)
     if (s.cam.scale >= 0.4) { ctx.shadowColor = 'rgba(0,0,0,0.28)'; ctx.shadowBlur = 14; ctx.shadowOffsetY = 4; }
     ctx.beginPath(); ctx.roundRect(0, 0, W, H, r);
     ctx.fillStyle = stage ? t.card : mixColors(t.card2, t.card, 0.6);
@@ -743,7 +743,7 @@ export class Renderer {
     // title
     const tsize = far ? (s.style === 'sketch' ? 30 : 24) : s.style === 'sketch' ? 22 : 15;
     const tfont = fontOf(tsize, textFamily(t, s.style), 600);
-    const lines = far ? this.farTitle(stage, tfont) : L.titleLines;
+    const lines = far ? this.farTitle(stage, tfont, L.w) : L.titleLines;
     const lh = far ? tsize * 1.2 : L.titleLH;
     ctx.font = tfont; ctx.fillStyle = t.text; ctx.textBaseline = 'top';
     lines.forEach((ln, i) => ctx.fillText(ln, px, L.titleY + i * lh + (lh - tsize) / 2 - 1));
@@ -760,7 +760,9 @@ export class Renderer {
     if (far) return;
     // tasks
     const ci = this.claimsOf(stage);
-    for (const row of L.tasks) this.drawTaskRow(ctx, row.task, row.y, s, rowClaim(ci, row.task), !!stage.evidence?.[row.task.id]);
+    const rows = L.tasks.map((row) => ({ row, claim: rowClaim(ci, row.task) }));
+    const claimedRows = rows.filter((r) => r.claim).length;
+    for (const { row, claim } of rows) this.drawTaskRow(ctx, row.task, row.y, W, s, claim, !!stage.evidence?.[row.task.id], claimedRows);
     if (L.hiddenTasks > 0) {
       ctx.font = fontOf(11, t.fontUi); ctx.fillStyle = t.muted;
       ctx.fillText(s.labels.moreTasks.replace('{n}', String(L.hiddenTasks)), px + CARD.chk + 7, L.moreY + CARD.taskGap + CARD.taskH / 2);
@@ -780,7 +782,7 @@ export class Renderer {
     }
   }
 
-  private drawTaskRow(ctx: CanvasRenderingContext2D, task: CardLayout['tasks'][number]['task'], y: number, s: RenderState, claim?: { agent: string; silent?: boolean; note?: string }, verified = false) {
+  private drawTaskRow(ctx: CanvasRenderingContext2D, task: CardLayout['tasks'][number]['task'], y: number, W: number, s: RenderState, claim?: { agent: string; silent?: boolean; note?: string }, verified = false, claimedRows = 0) {
     const t = s.theme, px = CARD.padX, cy = y + CARD.taskH / 2, done = taskDone(task);
     const cx = px + CARD.chk / 2 + 1;
     ctx.beginPath(); ctx.arc(cx, cy, CARD.chk / 2 - 0.5, 0, Math.PI * 2);
@@ -801,18 +803,28 @@ export class Renderer {
     ctx.font = fontOf(10, t.fontMono); ctx.fillStyle = t.muted;
     ctx.fillText(task.id, x, cy + 0.5);
     x += measureText(task.id, ctx.font) + 7;
-    let right = CARD_W - px;
+    let right = W - px;
     if (claim) {
       const r = resolveAgent(claim.agent, s.agents, t), { name, avatar } = r;
       // silent agent (no sign of life for 10 min): warning colour instead of its own
       const col = claim.silent ? t.warn : r.color;
       ctx.font = fontOf(10, t.fontUi, 600);
-      // with a heartbeat note the chip may take up to half the row, so "what it is doing" stays readable
-      const txt = ellipsize(claimChipText(name, claim.note), claim.note ? 140 : 64, (q) => measureText(q, ctx.font)), avW = avatarWidth(avatar, (q) => measureText(q, ctx.font)), cw = measureText(txt, ctx.font) + 10 + avW;
-      ctx.beginPath(); ctx.roundRect(right - cw, cy - 7, cw, 14, 5); ctx.fillStyle = withAlpha(col, 0.16); ctx.fill();
-      if (avatar) this.drawAvatar(ctx, avatar, right - cw + 5, cy, col, s);
-      ctx.fillStyle = col; ctx.textAlign = 'left'; ctx.fillText(txt, right - cw + 5 + avW, cy + 0.5);
-      right -= cw + 6;
+      const avW = avatarWidth(avatar, (q) => measureText(q, ctx.font));
+      const budget = claimChipBudget(right, x, claimedRows);
+      if (budget > 0) {
+        // the only claimed row: name and heartbeat note in the room the id and title leave
+        const txt = ellipsize(claimChipText(name, claim.note), budget - 10 - avW, (q) => measureText(q, ctx.font)), cw = measureText(txt, ctx.font) + 10 + avW;
+        ctx.beginPath(); ctx.roundRect(right - cw, cy - 7, cw, 14, 5); ctx.fillStyle = withAlpha(col, 0.16); ctx.fill();
+        if (avatar) this.drawAvatar(ctx, avatar, right - cw + 5, cy, col, s);
+        ctx.fillStyle = col; ctx.textAlign = 'left'; ctx.fillText(txt, right - cw + 5 + avW, cy + 0.5);
+        right -= cw + 6;
+      } else if (avatar) {
+        this.drawAvatar(ctx, avatar, right - avW, cy, col, s);
+        right -= avW + 6;
+      } else {
+        ctx.beginPath(); ctx.arc(right - 4, cy, 4, 0, Math.PI * 2); ctx.fillStyle = col; ctx.fill();
+        right -= 14;
+      }
       ctx.font = fontOf(10, t.fontMono); ctx.fillStyle = t.muted;
     }
     if (task.sub.length) {
@@ -914,7 +926,7 @@ export class Renderer {
       world();
       ctx.translate(g.el.x, g.el.y);
       ctx.strokeStyle = t.accent; ctx.lineWidth = 2; ctx.setLineDash([8, 5]);
-      if (!isMilestone(g.stage)) { ctx.beginPath(); ctx.roundRect(0, 0, CARD_W, g.el.h, t.radiusCard); ctx.stroke(); }
+      if (!isMilestone(g.stage)) { ctx.beginPath(); ctx.roundRect(0, 0, g.el.w, g.el.h, t.radiusCard); ctx.stroke(); }
       ctx.setLineDash([]);
       ctx.font = fontOf(10, t.fontUi, 600);
       const label = s.labels.ghostBadge, bw = measureText(label, ctx.font) + 14;
@@ -954,7 +966,7 @@ export class Renderer {
       for (const p of o.pulses) {
         const cl = p.stage.claims![0], text = pillLabel(p.stage, s.labels);
         ctx.fillStyle = cl.silent ? t.warn : resolveAgent(cl.agent, s.agents, t).color;
-        ctx.beginPath(); ctx.arc(p.el.x + CARD_W - CARD.padX - pillWidth(text, t) - 9, p.el.y + CARD.padTop + CARD.headH / 2, 3.5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(p.el.x + p.el.w - CARD.padX - pillWidth(text, t) - 9, p.el.y + CARD.padTop + CARD.headH / 2, 3.5, 0, Math.PI * 2); ctx.fill();
       }
       ctx.restore();
     }

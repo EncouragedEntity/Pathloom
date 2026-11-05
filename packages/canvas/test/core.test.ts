@@ -3,7 +3,7 @@ import type { Element, StageView, ThemeTokens } from '../src/types';
 import { clampScale, fitBounds, screenToWorld, worldToScreen, zoomAt } from '../src/camera';
 import { compareIndex, keyAfter, keyBetween } from '../src/index-key';
 import { History } from '../src/history';
-import { CARD, CARD_W, cardLayout, edgeCurve, extractEdges, hitCheckbox, mixColors, statusColors, withAlpha, wrapText } from '../src/stage';
+import { CARD, CARD_MAX_W, CARD_W, cardLayout, cardWidth, edgeCurve, extractEdges, hitCheckbox, mixColors, statusColors, withAlpha, wrapText } from '../src/stage';
 import { Scene } from '../src/scene';
 import { newId } from '../src/id';
 
@@ -215,5 +215,25 @@ describe('scene', () => {
     s.set(r('a', 500, 'a'));
     expect(s.query({ minX: -5, minY: -5, maxX: 20, maxY: 20 })).toEqual([]);
     expect(s.query({ minX: 495, minY: -5, maxX: 520, maxY: 20 }).length).toBe(1);
+  });
+});
+
+describe('card width follows content', () => {
+  const m = (t: string) => t.length * 7;
+  const row = (t: string) => t.length * 6;
+  const st = (title: string, tasks: string[]) => ({ title, tasks: tasks.map((x, i) => ({ id: `BROWSER-0${i + 1}`, title: x, done: false, sub: [] })) });
+  it('short content keeps the narrowest width', () => expect(cardWidth(st('Core', ['a', 'b']), m, row)).toBe(CARD_W));
+  it('a long task row widens the card, in 10px steps', () => {
+    const w = cardWidth(st('Core', ['Playwright-доступ для агентів до цього вікна']), m, row);
+    expect(w).toBeGreaterThan(CARD_W);
+    expect(w % 10).toBe(0);
+    const need = CARD.padX * 2 + CARD.chk + 7 + row('BROWSER-01') + 7 + row('Playwright-доступ для агентів до цього вікна');
+    expect(w).toBeGreaterThanOrEqual(need);
+  });
+  it('never wider than the maximum', () => expect(cardWidth(st('x'.repeat(300), ['y'.repeat(200)]), m, row)).toBe(CARD_MAX_W));
+  it('claims do not change the width', () => {
+    const base = { ...st('Core', ['Playwright-доступ для агентів']), key: 'B', kind: 'stage', who: 'ai', due: null, priority: 'med', depends: [] } as unknown as StageView;
+    const claimed = { ...base, claims: [{ taskId: 'BROWSER-01', agent: 'claude', expiresAt: '2099', note: 'a very long note '.repeat(5) }] };
+    expect(cardLayout(claimed, m, 20, 2, row).w).toBe(cardLayout(base, m, 20, 2, row).w);
   });
 });
