@@ -1,4 +1,6 @@
 * { box-sizing: border-box; margin: 0; padding: 0; }
+:root { color-scheme: dark; }
+:root[data-mode="light"] { color-scheme: light; }
 html, body, #root { height: 100%; overflow: hidden; }
 body { background: var(--bg); color: var(--tx); font: 13px/1.4 var(--font-ui); -webkit-font-smoothing: antialiased; }
 button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
@@ -188,8 +190,7 @@ table.list tr.done .chk svg { opacity: 1; }
 .inline-edit { width: 100%; min-width: 0; padding: 2px 4px; margin-left: -4px; border-radius: 6px; border: 1px solid transparent; }
 .inline-edit:hover { border-color: var(--bd); }
 .inline-edit:focus { border-color: var(--ac); background: var(--card); }
-.meta select, .meta input[type="date"] { background: var(--card); color: var(--tx2); border: 1px solid var(--bd); border-radius: 6px; padding: 3px 6px; font: inherit; color-scheme: dark; }
-:root[data-mode="light"] .meta select, :root[data-mode="light"] .meta input[type="date"] { color-scheme: light; }
+.meta select, .meta input[type="date"] { background: var(--card); color: var(--tx2); border: 1px solid var(--bd); border-radius: 6px; padding: 3px 6px; font: inherit; }
 .trow { position: relative; }
 .trow .row-actions { display: flex; gap: 2px; opacity: 0; }
 .trow:hover .row-actions, .trow:focus-within .row-actions { opacity: 1; }
