@@ -1,8 +1,10 @@
-# Manual only (Actions → CI → Run workflow) so private-repo minutes are not spent on every push.
-# Switch `on:` to push/pull_request once the repository is public (public repos have free minutes).
+# Tests, lints and the license check on every push to main and every pull request (public repo: free minutes).
 name: CI
 
 on:
+  push:
+    branches: [main]
+  pull_request:
   workflow_dispatch:
 
 jobs:

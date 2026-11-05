@@ -8,6 +8,10 @@ on:
       tag:
         description: Release tag (e.g. v0.1.0)
         required: true
+      prerelease:
+        description: Mark as pre-release (beta)
+        type: boolean
+        default: true
 
 jobs:
   build:
@@ -45,4 +49,5 @@ jobs:
           tagName: ${{ inputs.tag }}
           releaseName: Pathloom ${{ inputs.tag }}
           releaseDraft: true
+          prerelease: ${{ inputs.prerelease }}
           args: ${{ matrix.args }}
