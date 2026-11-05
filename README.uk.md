@@ -58,7 +58,21 @@ AI-агенти добре пишуть код, але погано тримаю
 
 ## Встановлення
 
-Завантаж інсталятор для своєї системи з [Releases](https://github.com/XxArDy/Pathloom/releases) (Windows `.exe` / `.msi`, macOS `.dmg`, Linux `.AppImage` / `.deb`).
+Завантаж інсталятор для своєї системи з [Releases](https://github.com/XxArDy/Pathloom/releases) (Windows `.exe` / `.msi`, macOS `.dmg`, Linux `.AppImage` / `.deb` / `.tar.gz`).
+
+На Linux без встановлення: розпакуй `.tar.gz` (CLI `pathloom` і застосунок `pathloom-desktop`) і запускай із цієї папки:
+
+```bash
+tar -xzf pathloom-v0.1.0-x86_64-unknown-linux-gnu.tar.gz && ./pathloom --help
+```
+
+Архів не тягне залежностей. CLI `pathloom` потребує лише glibc 2.35 або новішої (зібрано на Ubuntu 22.04). `pathloom-desktop` з архіву потребує системних бібліотек WebKitGTK; на Debian/Ubuntu:
+
+```bash
+sudo apt install libwebkit2gtk-4.1-0 libgtk-3-0
+```
+
+Для десктоп-застосунку краще брати `.deb` або `.AppImage`. Перевір завантаження: `sha256sum -c pathloom-<tag>-x86_64-unknown-linux-gnu.tar.gz.sha256`.
 
 Щоб оновити, запусти новий інсталятор поверх старого. На Windows краще брати `.exe`: сесії AI-агентів, що працюють із Pathloom, не обриваються під час оновлення й отримають нову версію після перезапуску.
 

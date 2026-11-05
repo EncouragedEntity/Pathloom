@@ -58,7 +58,21 @@ Everything is local. No account, no cloud.
 
 ## Install
 
-Download the installer for your system from [Releases](https://github.com/XxArDy/Pathloom/releases) (Windows `.exe` / `.msi`, macOS `.dmg`, Linux `.AppImage` / `.deb`).
+Download the installer for your system from [Releases](https://github.com/XxArDy/Pathloom/releases) (Windows `.exe` / `.msi`, macOS `.dmg`, Linux `.AppImage` / `.deb` / `.tar.gz`).
+
+On Linux without installing: unpack the `.tar.gz` (the `pathloom` CLI and the `pathloom-desktop` app) and run it from that folder:
+
+```bash
+tar -xzf pathloom-v0.1.0-x86_64-unknown-linux-gnu.tar.gz && ./pathloom --help
+```
+
+The archive brings no dependencies. The `pathloom` CLI needs only glibc 2.35 or newer (built on Ubuntu 22.04). `pathloom-desktop` from the archive needs the system WebKitGTK libraries; on Debian/Ubuntu:
+
+```bash
+sudo apt install libwebkit2gtk-4.1-0 libgtk-3-0
+```
+
+For the desktop app the `.deb` or `.AppImage` is the recommended choice. Check the download with `sha256sum -c pathloom-<tag>-x86_64-unknown-linux-gnu.tar.gz.sha256`.
 
 To update, run the new installer over the old one. On Windows prefer the `.exe`: AI agent sessions that are using Pathloom keep working during the update and pick up the new version when they restart.
 
