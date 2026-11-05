@@ -1,4 +1,6 @@
 # Tests, lints and the license check on every push to main and every pull request (public repo: free minutes).
+# Each part runs only when its files changed: a CSS fix does not compile Rust, a CLI fix does not run the canvas tests.
+# Manual runs, new branches and changes to this file run everything.
 name: CI
 
 on:
@@ -8,33 +10,83 @@ on:
   workflow_dispatch:
 
 jobs:
-  test:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.f.outputs.rust }}
+      web: ${{ steps.f.outputs.web }}
+      deps: ${{ steps.f.outputs.deps }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: f
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          all() { for k in rust web deps; do echo "$k=true" >> "$GITHUB_OUTPUT"; done; }
+          if [ -z "$BASE" ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then all; exit 0; fi
+          files=$(git diff --name-only "$BASE" HEAD)
+          echo "$files"
+          if echo "$files" | grep -qx '.github/workflows/ci.yml'; then all; exit 0; fi
+          has() { echo "$files" | grep -qE "$1" && echo true || echo false; }
+          echo "rust=$(has '^(crates/|Cargo\.(toml|lock)$|rust-toolchain)')" >> "$GITHUB_OUTPUT"
+          echo "web=$(has '^(packages/|apps/desktop/(src/|index\.html|package\.json|tsconfig|vite)|package(-lock)?\.json$)')" >> "$GITHUB_OUTPUT"
+          echo "deps=$(has '^(Cargo\.(toml|lock)|package(-lock)?\.json|THIRD-PARTY-LICENSES\.md|scripts/licenses\.mjs)$|^(crates/[^/]+|packages/[^/]+|apps/desktop|apps/desktop/src-tauri)/(Cargo\.toml|package\.json)$')" >> "$GITHUB_OUTPUT"
+
+  rust:
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - uses: actions/setup-node@v4
+      - uses: actions/cache@v4
         with:
-          node-version: 22
-          cache: npm
-      - name: System libraries for Tauri
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
-      - run: npm ci
-      - name: Dependency licenses (fails on a license outside the allow-list or an outdated THIRD-PARTY-LICENSES.md)
-        run: |
-          npm run licenses
-          git diff --exit-code THIRD-PARTY-LICENSES.md
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: rust-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: rust-${{ runner.os }}-
       - name: Rust tests (core + CLI/MCP)
         run: cargo test -p pathloom-core -p pathloom-cli
       - name: Clippy
         run: cargo clippy -p pathloom-core -p pathloom-cli --all-targets -- -D warnings
+
+  web:
+    needs: changes
+    if: needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
       - name: Canvas tests
         run: npm run test -w @pathloom/canvas
       - name: Typecheck
         run: |
           npm run typecheck -w @pathloom/canvas
           npm run typecheck -w @pathloom/desktop
+
+  licenses:
+    needs: changes
+    if: needs.changes.outputs.deps == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Dependency licenses (fails on a license outside the allow-list or an outdated THIRD-PARTY-LICENSES.md)
+        run: |
+          npm run licenses
+          git diff --exit-code THIRD-PARTY-LICENSES.md
