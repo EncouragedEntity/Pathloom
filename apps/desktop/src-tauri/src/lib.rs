@@ -312,6 +312,15 @@ fn artifact_open(app: AppHandle, state: State<'_, AppState>, path: String) -> Cm
     app.opener().open_path(full.display().to_string(), None::<&str>).map_err(|e| e.to_string())
 }
 
+/// Open the bundled third-party license notices (or the repo copy in development).
+#[tauri::command]
+fn open_licenses(app: AppHandle) -> CmdResult<()> {
+    let bundled = app.path().resource_dir().ok().map(|d| d.join("licenses").join("THIRD-PARTY-LICENSES.md"));
+    let dev = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../THIRD-PARTY-LICENSES.md");
+    let file = bundled.filter(|p| p.is_file()).unwrap_or(dev);
+    app.opener().open_path(file.display().to_string(), None::<&str>).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 fn usage_summary(state: State<'_, AppState>) -> CmdResult<pathloom_core::UsageSummary> {
     with_project(&state, |p| p.usage_summary())
@@ -603,6 +612,7 @@ pub fn run() {
             set_agent_changes,
             set_require_evidence,
             recent_forget,
+            open_licenses,
             board_auto_layout,
             board_arrange,
             artifact_open,

@@ -23,7 +23,7 @@
 - Файли проєкту користувача — джерело правди; запис лише атомарний; не переписувати текст, яким Pathloom не керує.
 - Стан етапу обчислюється, не зберігається.
 - Rust: правила зі skill `rust-skills` (`.claude/skills/rust-skills`), `thiserror` для помилок, без `unwrap` поза тестами.
-- Нові залежності — лише з ліцензіями MIT/Apache/BSD/ISC/CC0 (див. research.md).
+- Нові залежності — лише з дозволеними ліцензіями (список у CONTRIBUTING.md → Dependencies and licenses); після додавання — `npm run licenses` і закомітити оновлений THIRD-PARTY-LICENSES.md.
 - UI-рядки — тільки через i18n (`en`, `uk`).
 
 ## Команди

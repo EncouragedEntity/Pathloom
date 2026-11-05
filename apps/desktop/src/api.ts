@@ -40,6 +40,7 @@ export const api = {
   boardAutoLayout: (name: string, on: boolean) => invoke<Board>('board_auto_layout', { name, on }),
   boardArrange: (name: string) => invoke<Board>('board_arrange', { name }),
   recentForget: (path: string) => invoke<void>('recent_forget', { path }),
+  openLicenses: () => invoke<void>('open_licenses'),
   boardSave: (name: string, board: Board) => invoke<void>('board_save', { name, board }),
   boardCreate: (name: string, title: string) => invoke<Board>('board_create', { name, title }),
   boardsList: () => invoke<string[]>('boards_list'),

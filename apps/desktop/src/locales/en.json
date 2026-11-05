@@ -239,7 +239,9 @@
     "edgeHideRedundant": "Hide implied arrows",
     "edgeHideRedundantHint": "A → C is not drawn when A → B → C already shows it",
     "edgeBundle": "Group arrows between phases",
-    "edgeBundleHint": "Arrows from one frame to another become one thick arrow with a count; hover a card to see its own arrows"
+    "edgeBundleHint": "Arrows from one frame to another become one thick arrow with a count; hover a card to see its own arrows",
+    "licenses": "Licenses",
+    "licensesOpen": "Pathloom: MIT or Apache-2.0 · third-party licenses…"
   },
   "agent": {
     "conflict": "This board was changed outside the app while you had unsaved edits.",

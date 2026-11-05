@@ -178,6 +178,12 @@ npm run tauri dev -w @pathloom/desktop
 
 Рання, але робоча версія (0.1). Перевірено на Windows. Збірки для Linux і macOS робить workflow релізу, але на реальних машинах їх ще не запускали. Що далі — у [docs/ideas.md](docs/ideas.md).
 
+## Як долучитися
+
+Як зібрати проєкт, які перевірки пройти й яких правил дотримуватись — у [CONTRIBUTING.md](CONTRIBUTING.md) (англійською), будова коду — у [docs/architecture.md](docs/architecture.md). Про вразливості повідомляй за [SECURITY.md](SECURITY.md).
+
 ## Ліцензія
 
-На вибір: [MIT](LICENSE-MIT) або [Apache-2.0](LICENSE-APACHE).
+На вибір: [MIT](LICENSE-MIT) або [Apache-2.0](LICENSE-APACHE). Якщо не вказано інше, твій внесок у проєкт ліцензується так само.
+
+Сторонні бібліотеки та їхні ліцензії: [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) (також у застосунку: Налаштування → Ліцензії).

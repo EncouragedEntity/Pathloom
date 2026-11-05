@@ -178,6 +178,12 @@ Tests: `cargo test --workspace` and `npm run test -w @pathloom/canvas`.
 
 Early but usable (0.1). Tested on Windows. Linux and macOS builds are produced by the release workflow but have not been tried on real machines yet. See [docs/ideas.md](docs/ideas.md) for what's next.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, checks and project rules, and [docs/architecture.md](docs/architecture.md) for how the code is organised. Security issues: [SECURITY.md](SECURITY.md).
+
 ## License
 
-Dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.
+Dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option. Unless you state otherwise, any contribution you submit is licensed the same way.
+
+Third-party packages and their licenses: [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md) (also in the app: Settings → Licenses).

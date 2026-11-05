@@ -37,6 +37,11 @@
     "externalBin": [
       "binaries/pathloom"
     ],
+    "resources": {
+      "../../../THIRD-PARTY-LICENSES.md": "licenses/THIRD-PARTY-LICENSES.md",
+      "../../../LICENSE-MIT": "licenses/LICENSE-MIT",
+      "../../../LICENSE-APACHE": "licenses/LICENSE-APACHE"
+    },
     "windows": {
       "nsis": {
         "installerHooks": "./windows/hooks.nsh"

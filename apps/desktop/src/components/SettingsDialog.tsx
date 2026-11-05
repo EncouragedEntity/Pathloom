@@ -137,6 +137,8 @@ function General() {
       <dd><input type="checkbox" checked={edgeHideRedundant} onChange={(e) => set({ edgeHideRedundant: e.target.checked })} /></dd>
       <dt title={t('settings.edgeBundleHint')}>{t('settings.edgeBundle')}</dt>
       <dd><input type="checkbox" checked={edgeBundle} onChange={(e) => set({ edgeBundle: e.target.checked })} /></dd>
+      <dt>{t('settings.licenses')}</dt>
+      <dd><button className="btn" onClick={() => void api.openLicenses().catch((e) => set({ error: errorText(e) }))}>{t('settings.licensesOpen')}</button></dd>
     </dl>
   );
 }

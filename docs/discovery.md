@@ -90,6 +90,8 @@
 - Картка, що виросла, зсуває нижні вниз і розширює рамку (у полотні).
 - Правила для агентів у skill + `validate.hints` (`REDUNDANT_DEP`, `BIG_STAGE`, `NO_DESCRIPTION`), `description` в `apply`. Рамки — фази за часом, а не кошики статусів.
 
+**D33. Ліцензії та документація для розробників (2026-11-05).** Перевірено всі залежності, що потрапляють у збірку: 510 Rust-крейтів (усі платформи) і 55 npm-пакетів. Усі дозвільні; винятки з умовами: MPL-2.0 (`cssparser`, `selectors`, `dtoa-short`, `option-ext` — через Tauri, використовуються без змін) і OFL-1.1 (шрифти Inter, JetBrains Mono, Caveat — текст ліцензії тепер постачається з застосунком). Список дозволених ліцензій — у CONTRIBUTING.md; `npm run licenses` перевіряє їх і генерує THIRD-PARTY-LICENSES.md (також у CI та в інсталяторі, відкривається з Налаштувань). Додано CONTRIBUTING.md, SECURITY.md, docs/architecture.md, docs/README.md.
+
 ## Відкриті питання
 
 - Остаточний вибір canvas-підходу (власний vs форк Excalidraw) — після прототипу.

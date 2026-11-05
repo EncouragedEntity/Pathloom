@@ -1,5 +1,11 @@
 {
   "name": "pathloom",
   "private": true,
-  "workspaces": ["packages/*", "apps/desktop"]
+  "workspaces": [
+    "packages/*",
+    "apps/desktop"
+  ],
+  "scripts": {
+    "licenses": "node scripts/licenses.mjs"
+  }
 }

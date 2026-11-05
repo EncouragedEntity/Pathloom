@@ -1,0 +1,137 @@
+#!/usr/bin/env node
+// Third-party license check and notices (`npm run licenses`).
+//
+// Reads every dependency that ships in Pathloom builds — Rust crates from `cargo metadata` (all platforms) and
+// production npm packages from `npm ls --omit=dev` — checks each license against the allow-list below and
+// writes THIRD-PARTY-LICENSES.md with the package list and the license texts (deduplicated).
+// Exits with code 1 when a dependency has a license outside the allow-list or none at all.
+// Works offline: it only reads Cargo.lock / node_modules / the local cargo registry.
+import { execSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+
+const root = path.resolve(path.dirname(new URL(import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1')), '..');
+const OUT = path.join(root, 'THIRD-PARTY-LICENSES.md');
+
+// Allowed licenses (SPDX ids). Keep in sync with CONTRIBUTING.md → "Dependencies and licenses".
+const ALLOWED = new Set([
+  'MIT', 'MIT-0', 'Apache-2.0', 'Apache-2.0 WITH LLVM-exception', 'BSD-2-Clause', 'BSD-3-Clause', 'ISC', '0BSD',
+  'Zlib', 'CC0-1.0', 'Unlicense', 'Unicode-3.0', 'Unicode-DFS-2016', 'BSL-1.0',
+  // weak copyleft, file level: allowed only for unmodified third-party code (sources stay available upstream)
+  'MPL-2.0',
+  // fonts bundled into the app: the license text must ship with them (it does, in this file)
+  'OFL-1.1',
+]);
+
+/** "A OR (B AND C)" / "A/B" -> true when some alternative uses only allowed licenses. */
+function allowed(expr) {
+  if (!expr) return false;
+  const norm = expr.replace(/\//g, ' OR ').replace(/[()]/g, ' ').replace(/\s+/g, ' ').trim();
+  return norm.split(' OR ').some((alt) => alt.split(' AND ').every((id) => ALLOWED.has(id.trim())));
+}
+
+const LICENSE_FILE = /^(licen[cs]e|copying|notice)([-._].*)?$/i;
+function licenseTexts(dir) {
+  if (!dir || !fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir)
+    .filter((f) => LICENSE_FILE.test(f) && fs.statSync(path.join(dir, f)).isFile())
+    .sort()
+    .map((f) => fs.readFileSync(path.join(dir, f), 'utf8').replace(/\r\n/g, '\n').trim());
+}
+
+// ---- Rust ----
+const meta = JSON.parse(execSync('cargo metadata --format-version 1 --locked', { cwd: root, maxBuffer: 1 << 28 }).toString());
+const ws = new Set(meta.workspace_members);
+const rust = meta.packages
+  .filter((p) => !ws.has(p.id))
+  .map((p) => ({
+    eco: 'crate', name: p.name, version: p.version, license: p.license ?? (p.license_file ? `see ${p.license_file}` : ''),
+    url: p.repository ?? `https://crates.io/crates/${p.name}`, texts: licenseTexts(path.dirname(p.manifest_path)),
+  }));
+
+// ---- npm (production dependencies of the app and the canvas package) ----
+const tree = JSON.parse(execSync('npm ls --omit=dev --all --json -w @pathloom/desktop -w @pathloom/canvas', { cwd: root, maxBuffer: 1 << 28 }).toString());
+const npmSeen = new Map();
+(function walk(node) {
+  for (const [name, v] of Object.entries(node.dependencies ?? {})) {
+    if (!name.startsWith('@pathloom/') && v.version && !npmSeen.has(`${name}@${v.version}`)) npmSeen.set(`${name}@${v.version}`, name);
+    walk(v);
+  }
+})(tree);
+const npm = [...npmSeen.values()].map((name) => {
+  const dir = path.join(root, 'node_modules', name);
+  const pj = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
+  let lic = pj.license ?? pj.licenses ?? '';
+  if (typeof lic === 'object') lic = Array.isArray(lic) ? lic.map((x) => x.type ?? x).join(' OR ') : lic.type ?? '';
+  const repo = typeof pj.repository === 'string' ? pj.repository : pj.repository?.url;
+  return { eco: 'npm', name, version: pj.version, license: lic, url: repo ?? `https://www.npmjs.com/package/${name}`, texts: licenseTexts(dir) };
+});
+
+const all = [...rust, ...npm].sort((a, b) => a.eco.localeCompare(b.eco) || a.name.localeCompare(b.name) || a.version.localeCompare(b.version));
+const bad = all.filter((p) => !allowed(p.license));
+
+// ---- write THIRD-PARTY-LICENSES.md ----
+const counts = new Map();
+for (const p of all) counts.set(p.license || '(none)', (counts.get(p.license || '(none)') ?? 0) + 1);
+const texts = new Map(); // hash -> { text, users[] }
+for (const p of all) {
+  for (const t of p.texts) {
+    const h = crypto.createHash('sha1').update(t).digest('hex');
+    if (!texts.has(h)) texts.set(h, { text: t, users: [] });
+    texts.get(h).users.push(`${p.name} ${p.version}`);
+  }
+}
+const own = (id) => fs.readFileSync(path.join(root, id), 'utf8').replace(/\r\n/g, '\n').trim();
+const cleanUrl = (u) => String(u).replace(/^git\+/, '').replace(/\.git$/, '').replace(/^git:\/\//, 'https://');
+const lines = [
+  '# Third-party licenses',
+  '',
+  'Pathloom is licensed under MIT OR Apache-2.0 (see `LICENSE-MIT` and `LICENSE-APACHE`). It is built with the open-source',
+  'packages listed below; their copyright notices and license texts follow.',
+  '',
+  '_Generated by `npm run licenses` from `Cargo.lock` and `package-lock.json` — do not edit by hand._',
+  '',
+  `${rust.length} Rust crates (all platforms) and ${npm.length} npm packages.`,
+  '',
+  '## Notes',
+  '',
+  '- **MPL-2.0** (`cssparser`, `selectors`, `dtoa-short`, `option-ext`, pulled in by Tauri): used unmodified; their source code is',
+  '  available from crates.io and the repositories linked below. Changing these files would require publishing the changes under MPL-2.0.',
+  '- **OFL-1.1** (fonts Inter, JetBrains Mono, Caveat via `@fontsource/*`): bundled into the app unmodified. The fonts may be used',
+  '  and redistributed with software; they may not be sold on their own. The license text is included below.',
+  '- Packages offered under several licenses (for example "MIT OR Apache-2.0") are used under any of the listed options.',
+  '',
+  '## Summary',
+  '',
+  '| License | Packages |',
+  '|---|---|',
+  ...[...counts].sort((a, b) => b[1] - a[1]).map(([l, n]) => `| ${l} | ${n} |`),
+  '',
+  '## Packages',
+  '',
+  '| Package | Version | License | Source |',
+  '|---|---|---|---|',
+  ...all.map((p) => `| ${p.eco === 'npm' ? 'npm:' : ''}${p.name} | ${p.version} | ${p.license || '—'} | ${cleanUrl(p.url)} |`),
+  '',
+  '## License texts',
+  '',
+  'Standard texts (for packages that declare a license but ship no license file):',
+  '',
+  '<details><summary>MIT</summary>', '', '```text', own('LICENSE-MIT'), '```', '', '</details>', '',
+  '<details><summary>Apache-2.0</summary>', '', '```text', own('LICENSE-APACHE'), '```', '', '</details>', '',
+  'Texts shipped by the packages (identical texts are listed once):',
+  '',
+];
+for (const { text, users } of [...texts.values()].sort((a, b) => a.users[0].localeCompare(b.users[0]))) {
+  const who = users.length > 6 ? `${users.slice(0, 6).join(', ')} and ${users.length - 6} more` : users.join(', ');
+  lines.push(`<details><summary>${who}</summary>`, '', '```text', text.replace(/```/g, "'''"), '```', '', '</details>', '');
+}
+fs.writeFileSync(OUT, lines.join('\n'));
+
+console.log(`checked ${all.length} packages (${rust.length} crates, ${npm.length} npm), ${texts.size} distinct license texts -> ${path.relative(root, OUT)}`);
+if (bad.length) {
+  console.error('\nNOT ALLOWED (see CONTRIBUTING.md → Dependencies and licenses):');
+  for (const p of bad) console.error(`  ${p.eco} ${p.name} ${p.version}: ${p.license || '(no license)'}`);
+  process.exit(1);
+}
