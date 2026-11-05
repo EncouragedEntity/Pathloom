@@ -4,6 +4,7 @@ import { IconFolderOpen, IconPlus, IconClock, IconSparkles } from '@tabler/icons
 import { useApp } from '../store';
 import { api, errorText, type RecentProject } from '../api';
 import { createProject, openProject } from '../projectActions';
+import { AppMark } from './AppMark';
 
 export function StartScreen() {
   const { t, i18n } = useTranslation();
@@ -27,7 +28,7 @@ export function StartScreen() {
   return (
     <div className="start">
       <div className="start-card">
-        <div className="logo big"><span className="mk">◆</span>Pathloom</div>
+        <div className="logo big"><AppMark size={34} />Pathloom</div>
         <p className="tagline">{t('start.tagline')}</p>
         <div className="start-actions">
           <button className="btn pri lg" onClick={() => run(createProject)}><IconPlus size={18} />{t('start.newProject')}</button>

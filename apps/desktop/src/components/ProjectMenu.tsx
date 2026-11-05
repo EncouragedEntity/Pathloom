@@ -9,6 +9,7 @@ import { setLanguage } from '../i18n';
 import { createProject, openProject, reopenLastEnabled, setReopenLast } from '../projectActions';
 import { findTheme, nextTheme } from '../theme';
 import { effectiveKeymap, label, useKeys } from '../keys';
+import { AppMark } from './AppMark';
 
 
 /** Project switcher + quick settings, opened from the project name in the sidebar (Ctrl+O opens a folder). */
@@ -49,7 +50,7 @@ export function ProjectMenu() {
   return (
     <div className="pmenu" ref={ref}>
       <button className="pm-trigger" aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen((o) => !o)} title={project?.root}>
-        <span className="mk">◆</span>
+        <AppMark />
         <span className="pname">{project?.name}</span>
         <IconChevronDown size={14} />
       </button>
