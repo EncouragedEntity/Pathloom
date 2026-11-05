@@ -1,0 +1,24 @@
+name: Feature request
+description: Suggest something Pathloom should do.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Your problem
+      description: What you are trying to do and what gets in the way today.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea
+      description: How you would like it to work. Sketches and screenshots help.
+  - type: dropdown
+    id: who
+    attributes:
+      label: Who uses it
+      options:
+        - Me, in the app
+        - AI agents (CLI / MCP)
+        - Both

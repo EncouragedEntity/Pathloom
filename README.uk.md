@@ -6,9 +6,13 @@
 
 **Локальна дошка й roadmap для проєктів, які ти будуєш з AI-агентами.**
 
-Малюй вільно, плануй картками етапів і залежностями, а Claude Code (чи будь-який MCP-клієнт) хай будує й оновлює план — ти бачиш зміни наживо.
+Малюй вільно, плануй картками етапів і залежностями, а Claude Code (чи будь-який MCP-клієнт) будує й оновлює план, і ти бачиш зміни наживо.
 
-[English](README.md) · [Специфікація](docs/spec.md) · [Ідеї](docs/ideas.md)
+[![CI](https://github.com/XxArDy/Pathloom/actions/workflows/ci.yml/badge.svg)](https://github.com/XxArDy/Pathloom/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/XxArDy/Pathloom?include_prereleases&label=release)](https://github.com/XxArDy/Pathloom/releases)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#ліцензія)
+
+[Завантажити](https://github.com/XxArDy/Pathloom/releases) · [English](README.md) · [Зміни](CHANGELOG.md) · [Документація](docs/README.md)
 
 <img src="docs/images/uk/board.png" alt="Дошка Pathloom з фазами, картками етапів і залежностями" width="900">
 

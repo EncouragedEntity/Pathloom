@@ -6,9 +6,13 @@
 
 **A local whiteboard and roadmap for projects you build with AI agents.**
 
-Draw freely, plan with stage cards and dependencies, and let Claude Code (or any MCP client) build and update the plan — while you watch it change live.
+Draw freely, plan with stage cards and dependencies, and let Claude Code (or any MCP client) build and update the plan while you watch it change live.
 
-[Українською](README.uk.md) · [Spec](docs/spec.md) · [Ideas](docs/ideas.md)
+[![CI](https://github.com/XxArDy/Pathloom/actions/workflows/ci.yml/badge.svg)](https://github.com/XxArDy/Pathloom/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/XxArDy/Pathloom?include_prereleases&label=release)](https://github.com/XxArDy/Pathloom/releases)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue)](#license)
+
+[Download](https://github.com/XxArDy/Pathloom/releases) · [Українською](README.uk.md) · [Changelog](CHANGELOG.md) · [Docs](docs/README.md)
 
 <img src="docs/images/en/board.png" alt="Pathloom board with phases, stage cards and dependencies" width="900">
 

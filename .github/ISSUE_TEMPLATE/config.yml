@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or idea to discuss
+    url: https://github.com/XxArDy/Pathloom/discussions
+    about: Ask how to use Pathloom or talk through an idea before opening an issue.
+  - name: Security vulnerability
+    url: https://github.com/XxArDy/Pathloom/security/advisories/new
+    about: Report it privately. Please do not open a public issue.

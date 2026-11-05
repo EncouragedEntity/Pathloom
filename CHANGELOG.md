@@ -1,0 +1,32 @@
+# Changelog
+
+All notable changes to Pathloom. Versions follow [Semantic Versioning](https://semver.org/); the file and MCP formats are versioned
+separately as `pathloom/1`.
+
+## 0.1.0 (beta) - 2026-11-05
+
+First public release.
+
+### Board and roadmap
+- Infinite canvas with shapes, arrows that stick to shapes, pencil, text, sticky notes, images, frames, groups, alignment, snapping, minimap; clean and hand-drawn styles.
+- Stage cards with task checklists and subtasks, hard and soft dependencies, milestones, gate stages, computed statuses (ready, in progress, blocked, done).
+- Phases (frames) with progress, Focus mode (`E`), List and Overview views.
+- Auto-arrange: phases as column blocks, fewer crossing arrows, cards you move by hand stay pinned. Hovering a card highlights its chain; implied arrows are hidden and arrows between phases grouped.
+
+### Agents
+- `pathloom` CLI and `pathloom mcp` server: read the plan, apply batch changes, tick tasks, comment, validate.
+- Several agents at once: task claims with heartbeat, named assignees, agent profiles, activity log, links to client sessions, `pathloom watch --json` event stream.
+- Proof of done: tasks closed with the check that ran (`--run`), optional rule that agents must attach it.
+- Review mode: agent changes become proposals you accept or reject. Live reload with highlights and one-click undo.
+- Spec Kit `tasks.md` import, artifacts on stages, usage reporting.
+- Claude Code plugin and an Agent Skills file for other agents.
+
+### App
+- Windows, macOS and Linux builds (Tauri 2). Only Windows is tested so far.
+- Graphite, Light and Warm paper themes, custom themes, English and Ukrainian, rebindable shortcuts.
+- Installer updates keep running agent sessions alive.
+
+### Known limitations
+- Installers are not code-signed: Windows SmartScreen and macOS Gatekeeper show a warning.
+- macOS and Linux builds have not been tried on real machines yet.
+- No automatic updates yet: download the new installer from Releases.
