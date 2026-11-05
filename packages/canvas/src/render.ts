@@ -723,15 +723,23 @@ export class Renderer {
     ctx.fillText(stage.key, px, cy);
     let x = px + measureText(stage.key, ctx.font) + 6;
     const wn = whoName(stage.who), ag = wn ? resolveAgent(wn, s.agents, t) : null, wc = ag?.color ?? null;
+    // the who chip gets only the room left between the key and the status pill (+ the claim dot), so long
+    // localized statuses ("Можна починати") never overlap it
+    const L2 = s.labels;
+    const pillText = { done: L2.statusDone, active: L2.statusActive, ready: L2.statusReady, blocked: L2.statusBlocked }[stage.status];
+    ctx.font = fontOf(11, t.fontUi);
+    const pillLeft = W - px - pillWidth(pillText, t) - (stage.claims?.length ? 16 : 6);
     ctx.font = fontOf(10, t.fontUi);
-    const whoText = ellipsize(whoLabel(stage.who, s.labels, s.agents).toUpperCase(), WHO_MAX_W, (q) => measureText(q, ctx.font));
     const avW = avatarWidth(ag?.avatar, (q) => measureText(q, ctx.font));
-    const ww = measureText(whoText, ctx.font) + 12 + avW;
-    ctx.beginPath(); ctx.roundRect(x, cy - 8, ww, 16, 5); ctx.fillStyle = wc ? withAlpha(wc, 0.16) : t.card2; ctx.fill();
-    ctx.fillStyle = wc ?? (stage.who === 'ai' ? t.accent : t.text2);
-    if (ag?.avatar) this.drawAvatar(ctx, ag.avatar, x + 6, cy, wc!, s);
-    ctx.fillStyle = wc ?? (stage.who === 'ai' ? t.accent : t.text2);
-    ctx.fillText(whoText, x + 6 + avW, cy + 0.5);
+    const room = Math.min(WHO_MAX_W, pillLeft - x - 12 - avW);
+    if (room >= 14 || (ag?.avatar && room >= 0)) {
+      const whoText = room >= 14 ? ellipsize(whoLabel(stage.who, s.labels, s.agents).toUpperCase(), room, (q) => measureText(q, ctx.font)) : '';
+      const ww = (whoText ? measureText(whoText, ctx.font) : 0) + 12 + avW - (whoText ? 0 : 4);
+      ctx.beginPath(); ctx.roundRect(x, cy - 8, ww, 16, 5); ctx.fillStyle = wc ? withAlpha(wc, 0.16) : t.card2; ctx.fill();
+      if (ag?.avatar) this.drawAvatar(ctx, ag.avatar, x + 6, cy, wc!, s);
+      ctx.fillStyle = wc ?? (stage.who === 'ai' ? t.accent : t.text2);
+      if (whoText) ctx.fillText(whoText, x + 6 + avW, cy + 0.5);
+    }
     this.drawPill(ctx, stage, W - px, cy, s);
     // title
     const tsize = far ? (s.style === 'sketch' ? 30 : 24) : s.style === 'sketch' ? 22 : 15;
